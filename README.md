@@ -8,6 +8,8 @@ Generic LLM agent harness with tool-use support.
 uv sync
 ```
 
+The sandbox Docker image is built automatically on first use. Docker must be running.
+
 ## Development
 
 ```

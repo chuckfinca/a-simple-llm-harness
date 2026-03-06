@@ -5,7 +5,30 @@ import math
 from datetime import UTC, datetime
 from typing import Any
 
+from llm_harness.sandbox import run_python
+
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "run_python",
+            "description": (
+                "Execute Python code in a sandboxed Docker container. "
+                "Returns stdout, stderr, and exit code. "
+                "numpy, pandas, and scipy are available."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "Python source code to execute",
+                    }
+                },
+                "required": ["code"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -66,6 +89,8 @@ def execute_tool(name: str, arguments_json: str) -> str:
     except json.JSONDecodeError:
         return json.dumps({"error": f"Invalid JSON arguments: {arguments_json}"})
 
+    if name == "run_python":
+        return run_python(args.get("code", ""))
     if name == "calculator":
         return _calculator(args.get("expression", ""))
     if name == "get_current_time":

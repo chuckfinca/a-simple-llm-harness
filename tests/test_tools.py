@@ -31,6 +31,25 @@ class TestCalculator:
         assert "error" in result
 
 
+class TestRunPython:
+    def test_hello_world(self) -> None:
+        result = json.loads(execute_tool("run_python", '{"code": "print(42)"}'))
+        assert result["exit_code"] == 0
+        assert "42" in result["stdout"]
+        assert result["timed_out"] is False
+
+    def test_syntax_error(self) -> None:
+        result = json.loads(execute_tool("run_python", '{"code": "def"}'))
+        assert result["exit_code"] != 0
+        assert result["stderr"]
+
+    def test_numpy_available(self) -> None:
+        code = "import numpy; print(numpy.array([1,2,3]).sum())"
+        result = json.loads(execute_tool("run_python", json.dumps({"code": code})))
+        assert result["exit_code"] == 0
+        assert "6" in result["stdout"]
+
+
 class TestExecuteTool:
     def test_unknown_tool_returns_error(self) -> None:
         result = json.loads(execute_tool("nonexistent", "{}"))
