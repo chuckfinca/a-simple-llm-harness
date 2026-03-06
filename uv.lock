@@ -735,6 +735,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "litellm" },
+    { name = "rich" },
 ]
 
 [package.dev-dependencies]
@@ -746,7 +747,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "litellm", specifier = ">=1.60" }]
+requires-dist = [
+    { name = "litellm", specifier = ">=1.60" },
+    { name = "rich", specifier = ">=14" },
+]
 
 [package.metadata.requires-dev]
 dev = [

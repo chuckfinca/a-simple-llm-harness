@@ -7,7 +7,7 @@ authors = [
     { name = "chuckfinca", email = "chuckfinca@gmail.com" }
 ]
 requires-python = ">=3.12"
-dependencies = ["litellm>=1.60"]
+dependencies = ["litellm>=1.60", "rich>=14"]
 
 [build-system]
 requires = ["uv_build>=0.9.5,<0.10.0"]

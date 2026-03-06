@@ -6,9 +6,22 @@ import litellm
 from dotenv import load_dotenv
 
 from llm_harness.agent import run_agent_loop
+from llm_harness.display import (
+    console,
+    print_error,
+    print_header,
+    print_response,
+    print_tool_call,
+    print_tool_result,
+)
 from llm_harness.telemetry import JsonlLogger
 from llm_harness.tools import TOOL_DEFINITIONS
-from llm_harness.types import Message
+from llm_harness.types import (
+    Message,
+    ResponseEvent,
+    ToolCallEvent,
+    ToolResultEvent,
+)
 
 
 def main() -> None:
@@ -16,27 +29,25 @@ def main() -> None:
 
     model = os.environ.get("LH_MODEL")
     if not model:
-        print("error> LH_MODEL is required (set in .env or environment)")
-        print("example: LH_MODEL=gemini/gemini-2.5-flash")
+        print_error("LH_MODEL is required (set in .env or environment)")
         return
 
     system_prompt = os.environ.get("LH_SYSTEM_PROMPT")
     if not system_prompt:
-        print("error> LH_SYSTEM_PROMPT is required (set in .env or environment)")
+        print_error("LH_SYSTEM_PROMPT is required (set in .env or environment)")
         return
 
     litellm.callbacks = [JsonlLogger()]
 
     messages: list[Message] = [{"role": "system", "content": system_prompt}]
 
-    print(f"llm-harness ({model})")
-    print("Type 'quit' to exit.\n")
+    print_header(model)
 
     while True:
         try:
-            user_input = input("you> ").strip()
+            user_input = console.input("[bold]you>[/bold] ").strip()
         except (EOFError, KeyboardInterrupt):
-            print()
+            console.print()
             break
 
         if not user_input:
@@ -47,21 +58,21 @@ def main() -> None:
         messages.append({"role": "user", "content": user_input})
 
         try:
-            reply = run_agent_loop(
+            for event in run_agent_loop(
                 model=model,
                 messages=messages,
                 tools=TOOL_DEFINITIONS,
                 completion=litellm.completion,
-            )
+            ):
+                if isinstance(event, ToolCallEvent):
+                    print_tool_call(event)
+                elif isinstance(event, ToolResultEvent):
+                    print_tool_result(event)
+                elif isinstance(event, ResponseEvent):
+                    print_response(event)
         except Exception as exc:
             messages.pop()
-            print(f"\nerror> {exc}\n")
-            continue
-
-        if reply:
-            print(f"\nassistant> {reply}\n")
-        else:
-            print("\nassistant> [max turns reached]\n")
+            print_error(str(exc))
 
 
 if __name__ == "__main__":
