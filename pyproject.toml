@@ -1,0 +1,46 @@
+[project]
+name = "llm-harness"
+version = "0.1.0"
+description = "Generic LLM agent harness with tool-use support"
+readme = "README.md"
+authors = [
+    { name = "chuckfinca", email = "chuckfinca@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = ["litellm>=1.60"]
+
+[build-system]
+requires = ["uv_build>=0.9.5,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "pre-commit>=4.5.1",
+    "pytest>=9.0.2",
+    "ruff>=0.15.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "--import-mode=importlib",
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+]
+
+[tool.mypy]
+strict = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
