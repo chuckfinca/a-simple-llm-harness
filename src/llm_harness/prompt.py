@@ -14,9 +14,7 @@ def build_system_prompt(
 
     if workspace:
         file_count = sum(1 for p in workspace.rglob("*") if p.is_file())
-        sections.append(
-            _load_prompt("workspace").format(file_count=file_count)
-        )
+        sections.append(_load_prompt("workspace").format(file_count=file_count))
         sections.append(_load_prompt("search_strategy"))
         sections.append(_load_prompt("citations"))
 

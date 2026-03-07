@@ -53,10 +53,12 @@ def list_files(path: str = ".", pattern: str = "") -> str:
         relative = str(item.relative_to(_workspace))
         if name_filter and not name_filter.search(relative):
             continue
-        entries.append({
-            "path": relative,
-            "size": item.stat().st_size,
-        })
+        entries.append(
+            {
+                "path": relative,
+                "size": item.stat().st_size,
+            }
+        )
 
     return json.dumps({"files": entries, "count": len(entries)})
 
@@ -78,15 +80,19 @@ def read_file(path: str, offset: int = 0, limit: int | None = None) -> str:
     content = "".join(selected)
 
     if len(content) > MAX_READ_CHARS:
-        content = content[:MAX_READ_CHARS] + f"\n\n... (truncated at {MAX_READ_CHARS} chars)"
+        content = (
+            content[:MAX_READ_CHARS] + f"\n\n... (truncated at {MAX_READ_CHARS} chars)"
+        )
 
-    return json.dumps({
-        "path": path,
-        "content": content,
-        "total_lines": total_lines,
-        "offset": offset,
-        "lines_returned": len(selected),
-    })
+    return json.dumps(
+        {
+            "path": path,
+            "content": content,
+            "total_lines": total_lines,
+            "offset": offset,
+            "lines_returned": len(selected),
+        }
+    )
 
 
 def search_files(
@@ -121,11 +127,13 @@ def search_files(
                 if compiled.search(line):
                     total_matches += 1
                     if len(matches) < MAX_SEARCH_RESULTS:
-                        matches.append({
-                            "file": relative,
-                            "line": line_num,
-                            "text": line.strip()[:200],
-                        })
+                        matches.append(
+                            {
+                                "file": relative,
+                                "line": line_num,
+                                "text": line.strip()[:200],
+                            }
+                        )
 
     result = {
         "matches": matches,
@@ -149,7 +157,13 @@ if __name__ == "__main__":
     if fn == "list_files":
         print(list_files(cmd.get("path", "."), cmd.get("pattern", "")))
     elif fn == "search_files":
-        print(search_files(cmd.get("pattern", ""), cmd.get("glob", "*.md,*.txt"), cmd.get("whole_words", True)))
+        print(
+            search_files(
+                cmd.get("pattern", ""),
+                cmd.get("glob", "*.md,*.txt"),
+                cmd.get("whole_words", True),
+            )
+        )
     elif fn == "read_file":
         print(read_file(cmd.get("path", ""), cmd.get("offset", 0), cmd.get("limit")))
     else:

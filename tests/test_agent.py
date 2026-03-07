@@ -45,18 +45,22 @@ class TestAgentLoop:
         assert events[0].content == "Hello!"
 
     def test_tool_call_then_text(self, make_response: Any) -> None:
-        events = _collect_events([
-            make_response(
-                tool_calls=[{
-                    "id": "call_1",
-                    "function": {
-                        "name": "calculator",
-                        "arguments": '{"expression": "2 + 2"}',
-                    },
-                }]
-            ),
-            make_response(content="The answer is 4."),
-        ])
+        events = _collect_events(
+            [
+                make_response(
+                    tool_calls=[
+                        {
+                            "id": "call_1",
+                            "function": {
+                                "name": "calculator",
+                                "arguments": '{"expression": "2 + 2"}',
+                            },
+                        }
+                    ]
+                ),
+                make_response(content="The answer is 4."),
+            ]
+        )
 
         assert isinstance(events[0], ToolCallEvent)
         assert events[0].name == "calculator"
@@ -67,13 +71,15 @@ class TestAgentLoop:
 
     def test_max_turns_returns_none_content(self, make_response: Any) -> None:
         tool_response = make_response(
-            tool_calls=[{
-                "id": "call_1",
-                "function": {
-                    "name": "get_current_time",
-                    "arguments": "{}",
-                },
-            }]
+            tool_calls=[
+                {
+                    "id": "call_1",
+                    "function": {
+                        "name": "get_current_time",
+                        "arguments": "{}",
+                    },
+                }
+            ]
         )
 
         events = _collect_events(
@@ -91,13 +97,15 @@ class TestAgentLoop:
         _collect_events(
             [
                 make_response(
-                    tool_calls=[{
-                        "id": "call_1",
-                        "function": {
-                            "name": "calculator",
-                            "arguments": '{"expression": "1 + 1"}',
-                        },
-                    }]
+                    tool_calls=[
+                        {
+                            "id": "call_1",
+                            "function": {
+                                "name": "calculator",
+                                "arguments": '{"expression": "1 + 1"}',
+                            },
+                        }
+                    ]
                 ),
                 make_response(content="Done."),
             ],

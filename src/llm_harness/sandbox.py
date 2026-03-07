@@ -53,7 +53,9 @@ def _docker_run(
     try:
         return subprocess.run(
             [
-                "docker", "run", "--rm",
+                "docker",
+                "run",
+                "--rm",
                 f"--name={container_name}",
                 "--cap-drop=ALL",
                 "--network=none",
@@ -90,19 +92,23 @@ def run_python(code: str, *, timeout: int = TIMEOUT_SECONDS) -> str:
                 command=["python", "/home/sandbox/script.py"],
                 timeout=timeout,
             )
-            return json.dumps({
-                "stdout": _truncate(result.stdout),
-                "stderr": _truncate(result.stderr),
-                "exit_code": result.returncode,
-                "timed_out": False,
-            })
+            return json.dumps(
+                {
+                    "stdout": _truncate(result.stdout),
+                    "stderr": _truncate(result.stderr),
+                    "exit_code": result.returncode,
+                    "timed_out": False,
+                }
+            )
         except subprocess.TimeoutExpired:
-            return json.dumps({
-                "stdout": "",
-                "stderr": "Execution timed out.",
-                "exit_code": -1,
-                "timed_out": True,
-            })
+            return json.dumps(
+                {
+                    "stdout": "",
+                    "stderr": "Execution timed out.",
+                    "exit_code": -1,
+                    "timed_out": True,
+                }
+            )
 
 
 def run_file_tool(fn: str, args: dict, workspace: Path) -> str:
@@ -130,4 +136,6 @@ def _truncate(text: str) -> str:
         return text
     half = MAX_OUTPUT_CHARS // 2
     omitted = len(text) - MAX_OUTPUT_CHARS
-    return text[:half] + f"\n\n... ({omitted} characters omitted) ...\n\n" + text[-half:]
+    return (
+        text[:half] + f"\n\n... ({omitted} characters omitted) ...\n\n" + text[-half:]
+    )

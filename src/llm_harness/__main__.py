@@ -6,8 +6,6 @@ from pathlib import Path
 import litellm
 from dotenv import load_dotenv
 
-litellm.suppress_debug_info = True
-
 from llm_harness.agent import run_agent_loop
 from llm_harness.display import (
     console,
@@ -31,6 +29,7 @@ from llm_harness.types import (
 
 def main() -> None:
     load_dotenv()
+    litellm.suppress_debug_info = True
 
     model = os.environ.get("LH_MODEL")
     if not model:

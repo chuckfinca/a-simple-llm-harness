@@ -17,7 +17,9 @@ def print_header(model: str) -> None:
 
 def print_tool_call(event: ToolCallEvent) -> None:
     args_preview = _truncate(event.arguments, INLINE_TRUNCATE)
-    console.print(f"  [bright_black]\\[tool][/bright_black] [cyan]{event.name}[/cyan]({args_preview})")
+    console.print(
+        f"  [bright_black]\\[tool][/bright_black] [cyan]{event.name}[/cyan]({args_preview})"
+    )
 
 
 def print_tool_result(event: ToolResultEvent) -> None:
