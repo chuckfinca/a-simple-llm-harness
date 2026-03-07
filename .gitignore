@@ -35,8 +35,7 @@ htmlcov/
 *.swp
 *.swo
 
-# Test data (downloaded corpora)
-test-data/
+# Test data (keep downloaded corpora in git for reproducibility)
 
 # Logs
 logs/
