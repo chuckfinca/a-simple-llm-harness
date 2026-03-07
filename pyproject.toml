@@ -29,6 +29,9 @@ addopts = [
     "--strict-config",
     "-ra",
 ]
+markers = [
+    "integration: slow tests that make real LLM API calls and run Docker containers",
+]
 
 [tool.mypy]
 strict = true
