@@ -35,6 +35,9 @@ htmlcov/
 *.swp
 *.swo
 
+# Test data (downloaded corpora)
+test-data/
+
 # Logs
 logs/
 
