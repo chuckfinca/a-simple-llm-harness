@@ -19,6 +19,10 @@ def set_workspace(path: str) -> None:
     _workspace = resolved
 
 
+def get_workspace() -> Path | None:
+    return _workspace
+
+
 def _resolve_safe(relative_path: str) -> Path | None:
     if _workspace is None:
         return None
@@ -135,3 +139,19 @@ def search_files(
             "Try a more specific pattern."
         )
     return json.dumps(result)
+
+
+if __name__ == "__main__":
+    import sys
+
+    cmd = json.loads(sys.argv[1])
+    set_workspace("/workspace")
+    fn = cmd.pop("fn")
+    if fn == "list_files":
+        print(list_files(cmd.get("path", "."), cmd.get("pattern", "")))
+    elif fn == "search_files":
+        print(search_files(cmd.get("pattern", ""), cmd.get("glob", "*.md,*.txt"), cmd.get("whole_words", True)))
+    elif fn == "read_file":
+        print(read_file(cmd.get("path", ""), cmd.get("offset", 0), cmd.get("limit")))
+    else:
+        print(json.dumps({"error": f"Unknown function: {fn}"}))

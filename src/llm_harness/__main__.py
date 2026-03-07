@@ -6,6 +6,8 @@ from pathlib import Path
 import litellm
 from dotenv import load_dotenv
 
+litellm.suppress_debug_info = True
+
 from llm_harness.agent import run_agent_loop
 from llm_harness.display import (
     console,
@@ -44,9 +46,27 @@ def _workspace_context(workspace: str) -> str:
         "- After finding a relevant document, scan it for new terms you "
         "haven't searched for yet.\n"
         "- Stop searching when additional searches aren't finding new "
-        "relevant documents.\n"
-        "- Cite sources with filename and line number, e.g. "
-        "(federalist-10-the-same-subject-continued.txt:42)."
+        "relevant documents.\n\n"
+        "## Citing Sources\n\n"
+        "After gathering evidence, quote the relevant passages from your tool "
+        "results before synthesizing your answer. Use numbered references [1], "
+        "[2] inline after each claim, with a Sources section at the end.\n\n"
+        "Rules:\n"
+        "- Only cite documents you read via read_file or found via search_files "
+        "in this conversation. Never cite from memory.\n"
+        "- Use the line numbers returned by your tools. Never estimate or guess "
+        "line numbers.\n"
+        "- For central claims, include a brief direct quote.\n"
+        "- Separate sourced claims from your own interpretation. Only sourced "
+        "claims get citations.\n"
+        "- If you cannot find information, say so rather than citing a loosely "
+        "related passage.\n\n"
+        "Example:\n"
+        "  Madison argues that factions arise from the nature of man [1], and "
+        "that a pure democracy cannot cure the mischiefs of faction [2].\n\n"
+        "  Sources:\n"
+        "  [1] federalist-10-the-same-subject-continued.txt, lines 42-58\n"
+        "  [2] federalist-10-the-same-subject-continued.txt, lines 120-135"
     )
 
 

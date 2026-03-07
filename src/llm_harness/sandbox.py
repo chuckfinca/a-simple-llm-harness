@@ -88,6 +88,46 @@ def run_python(code: str, *, timeout: int = TIMEOUT_SECONDS) -> str:
             })
 
 
+def run_file_tool(fn: str, args: dict, workspace: Path) -> str:
+    ensure_sandbox_image()
+    files_module = Path(__file__).parent / "files.py"
+    container_name = f"{CONTAINER_PREFIX}{uuid.uuid4().hex[:12]}"
+    command = json.dumps({"fn": fn, **args})
+
+    try:
+        result = subprocess.run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                f"--name={container_name}",
+                "--cap-drop=ALL",
+                "--network=none",
+                "--memory=512m",
+                "--pids-limit=100",
+                "--read-only",
+                "--tmpfs=/tmp:size=64m",
+                "-v", f"{files_module}:/home/sandbox/files.py:ro",
+                "-v", f"{workspace}:/workspace:ro",
+                IMAGE_NAME,
+                "python", "/home/sandbox/files.py", command,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_SECONDS,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+        return json.dumps({"error": _truncate(result.stderr)})
+    except subprocess.TimeoutExpired:
+        subprocess.run(
+            ["docker", "kill", container_name],
+            capture_output=True,
+            timeout=5,
+        )
+        return json.dumps({"error": "File operation timed out."})
+
+
 def _truncate(text: str) -> str:
     if len(text) <= MAX_OUTPUT_CHARS:
         return text

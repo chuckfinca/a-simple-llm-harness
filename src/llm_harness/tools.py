@@ -5,8 +5,8 @@ import math
 from datetime import UTC, datetime
 from typing import Any
 
-from llm_harness.files import list_files, read_file, search_files
-from llm_harness.sandbox import run_python
+from llm_harness.files import get_workspace
+from llm_harness.sandbox import run_file_tool, run_python
 
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
@@ -193,16 +193,11 @@ def execute_tool(name: str, arguments_json: str) -> str:
 
     if name == "run_python":
         return run_python(args.get("code", ""))
-    if name == "list_files":
-        return list_files(args.get("path", "."), args.get("pattern", ""))
-    if name == "search_files":
-        return search_files(
-            args.get("pattern", ""),
-            args.get("glob", "*.md,*.txt"),
-            args.get("whole_words", True),
-        )
-    if name == "read_file":
-        return read_file(args.get("path", ""), args.get("offset", 0), args.get("limit"))
+    if name in ("list_files", "search_files", "read_file"):
+        workspace = get_workspace()
+        if workspace is None:
+            return json.dumps({"error": "Workspace not configured"})
+        return run_file_tool(name, args, workspace)
     if name == "calculator":
         return _calculator(args.get("expression", ""))
     if name == "get_current_time":
