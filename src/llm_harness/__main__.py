@@ -18,6 +18,7 @@ from llm_harness.display import (
     print_tool_result,
 )
 from llm_harness.files import set_workspace
+from llm_harness.prompt import build_system_prompt
 from llm_harness.telemetry import JsonlLogger
 from llm_harness.tools import TOOL_DEFINITIONS
 from llm_harness.types import (
@@ -26,48 +27,6 @@ from llm_harness.types import (
     ToolCallEvent,
     ToolResultEvent,
 )
-
-
-def _workspace_context(workspace: str) -> str:
-    resolved = Path(workspace).resolve()
-    file_count = sum(1 for p in resolved.rglob("*") if p.is_file())
-    return (
-        "\n\n## Workspace\n\n"
-        f"You have access to a workspace directory containing {file_count} text documents. "
-        "Use list_files, search_files, and read_file to explore them.\n\n"
-        "When searching the workspace:\n"
-        "- Extract key nouns from the question. Ignore task words like "
-        '"discuss" or "analyze."\n'
-        "- Generate 3-5 search terms per concept: synonyms, related words, "
-        "and morphological variants (e.g., judge/judicial/judiciary). A single "
-        "term misses most relevant documents.\n"
-        "- Start with the most specific terms. Broaden only if needed.\n"
-        "- Search synonyms separately — do not combine them in one search.\n"
-        "- After finding a relevant document, scan it for new terms you "
-        "haven't searched for yet.\n"
-        "- Stop searching when additional searches aren't finding new "
-        "relevant documents.\n\n"
-        "## Citing Sources\n\n"
-        "After gathering evidence, quote the relevant passages from your tool "
-        "results before synthesizing your answer. Use numbered references [1], "
-        "[2] inline after each claim, with a Sources section at the end.\n\n"
-        "Rules:\n"
-        "- Only cite documents you read via read_file or found via search_files "
-        "in this conversation. Never cite from memory.\n"
-        "- Use the line numbers returned by your tools. Never estimate or guess "
-        "line numbers.\n"
-        "- For central claims, include a brief direct quote.\n"
-        "- Separate sourced claims from your own interpretation. Only sourced "
-        "claims get citations.\n"
-        "- If you cannot find information, say so rather than citing a loosely "
-        "related passage.\n\n"
-        "Example:\n"
-        "  Madison argues that factions arise from the nature of man [1], and "
-        "that a pure democracy cannot cure the mischiefs of faction [2].\n\n"
-        "  Sources:\n"
-        "  [1] federalist-10-the-same-subject-continued.txt, lines 42-58\n"
-        "  [2] federalist-10-the-same-subject-continued.txt, lines 120-135"
-    )
 
 
 def main() -> None:
@@ -90,7 +49,11 @@ def main() -> None:
         except ValueError as exc:
             print_error(str(exc))
             return
-        system_prompt += _workspace_context(workspace)
+
+    system_prompt = build_system_prompt(
+        base_prompt=system_prompt,
+        workspace=Path(workspace).resolve() if workspace else None,
+    )
 
     litellm.callbacks = [JsonlLogger()]
 

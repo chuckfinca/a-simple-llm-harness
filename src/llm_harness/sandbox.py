@@ -39,33 +39,55 @@ def ensure_sandbox_image() -> None:
     _image_ready = True
 
 
+def _docker_run(
+    volumes: list[tuple[str, str]],
+    command: list[str],
+    *,
+    timeout: int = TIMEOUT_SECONDS,
+) -> subprocess.CompletedProcess[str]:
+    container_name = f"{CONTAINER_PREFIX}{uuid.uuid4().hex[:12]}"
+    volume_args = []
+    for src, dest in volumes:
+        volume_args += ["-v", f"{src}:{dest}:ro"]
+
+    try:
+        return subprocess.run(
+            [
+                "docker", "run", "--rm",
+                f"--name={container_name}",
+                "--cap-drop=ALL",
+                "--network=none",
+                "--memory=512m",
+                "--pids-limit=100",
+                "--read-only",
+                "--tmpfs=/tmp:size=64m",
+                *volume_args,
+                IMAGE_NAME,
+                *command,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        subprocess.run(
+            ["docker", "kill", container_name],
+            capture_output=True,
+            timeout=5,
+        )
+        raise
+
+
 def run_python(code: str, *, timeout: int = TIMEOUT_SECONDS) -> str:
     ensure_sandbox_image()
     with tempfile.TemporaryDirectory() as tmpdir:
         script_path = Path(tmpdir) / "script.py"
         script_path.write_text(code)
 
-        container_name = f"{CONTAINER_PREFIX}{uuid.uuid4().hex[:12]}"
-
         try:
-            result = subprocess.run(
-                [
-                    "docker",
-                    "run",
-                    "--rm",
-                    f"--name={container_name}",
-                    "--cap-drop=ALL",
-                    "--network=none",
-                    "--memory=512m",
-                    "--pids-limit=100",
-                    "--read-only",
-                    "--tmpfs=/tmp:size=64m",
-                    "-v", f"{script_path}:/home/sandbox/script.py:ro",
-                    IMAGE_NAME,
-                    "python", "/home/sandbox/script.py",
-                ],
-                capture_output=True,
-                text=True,
+            result = _docker_run(
+                volumes=[(str(script_path), "/home/sandbox/script.py")],
+                command=["python", "/home/sandbox/script.py"],
                 timeout=timeout,
             )
             return json.dumps({
@@ -75,11 +97,6 @@ def run_python(code: str, *, timeout: int = TIMEOUT_SECONDS) -> str:
                 "timed_out": False,
             })
         except subprocess.TimeoutExpired:
-            subprocess.run(
-                ["docker", "kill", container_name],
-                capture_output=True,
-                timeout=5,
-            )
             return json.dumps({
                 "stdout": "",
                 "stderr": "Execution timed out.",
@@ -91,40 +108,20 @@ def run_python(code: str, *, timeout: int = TIMEOUT_SECONDS) -> str:
 def run_file_tool(fn: str, args: dict, workspace: Path) -> str:
     ensure_sandbox_image()
     files_module = Path(__file__).parent / "files.py"
-    container_name = f"{CONTAINER_PREFIX}{uuid.uuid4().hex[:12]}"
-    command = json.dumps({"fn": fn, **args})
+    command_json = json.dumps({"fn": fn, **args})
 
     try:
-        result = subprocess.run(
-            [
-                "docker",
-                "run",
-                "--rm",
-                f"--name={container_name}",
-                "--cap-drop=ALL",
-                "--network=none",
-                "--memory=512m",
-                "--pids-limit=100",
-                "--read-only",
-                "--tmpfs=/tmp:size=64m",
-                "-v", f"{files_module}:/home/sandbox/files.py:ro",
-                "-v", f"{workspace}:/workspace:ro",
-                IMAGE_NAME,
-                "python", "/home/sandbox/files.py", command,
+        result = _docker_run(
+            volumes=[
+                (str(files_module), "/home/sandbox/files.py"),
+                (str(workspace), "/workspace"),
             ],
-            capture_output=True,
-            text=True,
-            timeout=TIMEOUT_SECONDS,
+            command=["python", "/home/sandbox/files.py", command_json],
         )
         if result.returncode == 0:
             return result.stdout.strip()
         return json.dumps({"error": _truncate(result.stderr)})
     except subprocess.TimeoutExpired:
-        subprocess.run(
-            ["docker", "kill", container_name],
-            capture_output=True,
-            timeout=5,
-        )
         return json.dumps({"error": "File operation timed out."})
 
 
