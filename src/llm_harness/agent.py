@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Generator
+from pathlib import Path
 from typing import Any
 
 from llm_harness.tools import execute_tool
@@ -54,6 +55,7 @@ def run_agent_loop(
     messages: list[Message],
     tools: list[ToolDef],
     completion: CompletionFunc,
+    workspace: Path | None = None,
     max_turns: int = 20,
 ) -> Generator[AgentEvent, None, None]:
     total_prompt_tokens = 0
@@ -94,7 +96,7 @@ def run_agent_loop(
             fn = tool_call["function"]
             yield ToolCallEvent(name=fn["name"], arguments=fn["arguments"])
 
-            result = execute_tool(fn["name"], fn["arguments"])
+            result = execute_tool(fn["name"], fn["arguments"], workspace=workspace)
             yield ToolResultEvent(name=fn["name"], result=result)
 
             messages.append(

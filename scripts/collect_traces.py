@@ -20,7 +20,6 @@ import litellm
 from dotenv import load_dotenv
 
 from llm_harness.agent import run_agent_loop
-from llm_harness.files import set_workspace
 from llm_harness.prompt import build_system_prompt
 from llm_harness.tools import TOOL_DEFINITIONS
 from llm_harness.types import (
@@ -82,8 +81,7 @@ class Trace:
 
 
 def run_question(model: str, workspace_name: str, question: str) -> Trace:
-    workspace = Path(__file__).parent.parent / "test-data" / workspace_name
-    set_workspace(str(workspace))
+    workspace = (Path(__file__).parent.parent / "test-data" / workspace_name).resolve()
 
     system_prompt = build_system_prompt(
         base_prompt=BASE_PROMPT,
@@ -103,6 +101,7 @@ def run_question(model: str, workspace_name: str, question: str) -> Trace:
             messages=messages,
             tools=TOOL_DEFINITIONS,
             completion=litellm.completion,
+            workspace=workspace,
         ):
             if isinstance(event, ToolCallEvent):
                 trace.tool_calls.append(

@@ -7,32 +7,16 @@ from pathlib import Path
 MAX_READ_CHARS = 8000
 MAX_SEARCH_RESULTS = 30
 
-_workspace: Path | None = None
 
-
-def set_workspace(path: str) -> None:
-    global _workspace  # noqa: PLW0603
-    resolved = Path(path).resolve()
-    if not resolved.is_dir():
-        raise ValueError(f"Workspace is not a directory: {resolved}")
-    _workspace = resolved
-
-
-def get_workspace() -> Path | None:
-    return _workspace
-
-
-def _resolve_safe(relative_path: str) -> Path | None:
-    if _workspace is None:
-        return None
-    resolved = (_workspace / relative_path).resolve()
-    if not resolved.is_relative_to(_workspace):
+def _resolve_safe(workspace: Path, relative_path: str) -> Path | None:
+    resolved = (workspace / relative_path).resolve()
+    if not resolved.is_relative_to(workspace):
         return None
     return resolved
 
 
-def list_files(path: str = ".", pattern: str = "") -> str:
-    target = _resolve_safe(path)
+def list_files(workspace: Path, path: str = ".", pattern: str = "") -> str:
+    target = _resolve_safe(workspace, path)
     if target is None:
         return json.dumps({"error": f"Invalid path: {path}"})
     if not target.is_dir():
@@ -50,7 +34,7 @@ def list_files(path: str = ".", pattern: str = "") -> str:
     for item in sorted(target.rglob("*")):
         if not item.is_file():
             continue
-        relative = str(item.relative_to(_workspace))
+        relative = str(item.relative_to(workspace))
         if name_filter and not name_filter.search(relative):
             continue
         entries.append(
@@ -63,8 +47,10 @@ def list_files(path: str = ".", pattern: str = "") -> str:
     return json.dumps({"files": entries, "count": len(entries)})
 
 
-def read_file(path: str, offset: int = 0, limit: int | None = None) -> str:
-    target = _resolve_safe(path)
+def read_file(
+    workspace: Path, path: str, offset: int = 0, limit: int | None = None
+) -> str:
+    target = _resolve_safe(workspace, path)
     if target is None:
         return json.dumps({"error": f"Invalid path: {path}"})
     if not target.is_file():
@@ -96,11 +82,8 @@ def read_file(path: str, offset: int = 0, limit: int | None = None) -> str:
 
 
 def search_files(
-    pattern: str, glob: str = "*.md,*.txt", whole_words: bool = True
+    workspace: Path, pattern: str, glob: str = "*.md,*.txt", whole_words: bool = True
 ) -> str:
-    if _workspace is None:
-        return json.dumps({"error": "Workspace not configured"})
-
     if whole_words:
         pattern = rf"\b(?:{pattern})\b"
 
@@ -114,7 +97,7 @@ def search_files(
     total_matches = 0
 
     for ext in sorted(extensions):
-        for filepath in sorted(_workspace.rglob(ext)):
+        for filepath in sorted(workspace.rglob(ext)):
             if not filepath.is_file():
                 continue
             try:
@@ -122,7 +105,7 @@ def search_files(
             except Exception:
                 continue
 
-            relative = str(filepath.relative_to(_workspace))
+            relative = str(filepath.relative_to(workspace))
             for line_num, line in enumerate(lines, 1):
                 if compiled.search(line):
                     total_matches += 1
@@ -152,19 +135,24 @@ if __name__ == "__main__":
     import sys
 
     cmd = json.loads(sys.argv[1])
-    set_workspace("/workspace")
+    workspace = Path("/workspace")
     fn = cmd.pop("fn")
     if fn == "list_files":
-        print(list_files(cmd.get("path", "."), cmd.get("pattern", "")))
+        print(list_files(workspace, cmd.get("path", "."), cmd.get("pattern", "")))
     elif fn == "search_files":
         print(
             search_files(
+                workspace,
                 cmd.get("pattern", ""),
                 cmd.get("glob", "*.md,*.txt"),
                 cmd.get("whole_words", True),
             )
         )
     elif fn == "read_file":
-        print(read_file(cmd.get("path", ""), cmd.get("offset", 0), cmd.get("limit")))
+        print(
+            read_file(
+                workspace, cmd.get("path", ""), cmd.get("offset", 0), cmd.get("limit")
+            )
+        )
     else:
         print(json.dumps({"error": f"Unknown function: {fn}"}))

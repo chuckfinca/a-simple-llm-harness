@@ -15,7 +15,6 @@ from llm_harness.display import (
     print_tool_call,
     print_tool_result,
 )
-from llm_harness.files import set_workspace
 from llm_harness.prompt import build_system_prompt
 from llm_harness.telemetry import JsonlLogger
 from llm_harness.tools import TOOL_DEFINITIONS
@@ -41,17 +40,17 @@ def main() -> None:
         print_error("LH_SYSTEM_PROMPT is required (set in .env or environment)")
         return
 
-    workspace = os.environ.get("LH_WORKSPACE")
-    if workspace:
-        try:
-            set_workspace(workspace)
-        except ValueError as exc:
-            print_error(str(exc))
+    workspace_path = os.environ.get("LH_WORKSPACE")
+    workspace: Path | None = None
+    if workspace_path:
+        workspace = Path(workspace_path).resolve()
+        if not workspace.is_dir():
+            print_error(f"Workspace is not a directory: {workspace}")
             return
 
     system_prompt = build_system_prompt(
         base_prompt=system_prompt,
-        workspace=Path(workspace).resolve() if workspace else None,
+        workspace=workspace,
     )
 
     litellm.callbacks = [JsonlLogger()]
@@ -80,6 +79,7 @@ def main() -> None:
                 messages=messages,
                 tools=TOOL_DEFINITIONS,
                 completion=litellm.completion,
+                workspace=workspace,
             ):
                 if isinstance(event, ToolCallEvent):
                     print_tool_call(event)

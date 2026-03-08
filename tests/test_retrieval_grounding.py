@@ -25,7 +25,6 @@ import pytest
 from dotenv import load_dotenv
 
 from llm_harness.agent import run_agent_loop
-from llm_harness.files import set_workspace
 from llm_harness.prompt import build_system_prompt
 from llm_harness.tools import TOOL_DEFINITIONS
 from llm_harness.types import (
@@ -59,7 +58,6 @@ def _run_agent(question: str, workspace: Path) -> AgentTrace:
     if not model:
         pytest.skip("LH_MODEL not set")
 
-    set_workspace(str(workspace))
     system_prompt = build_system_prompt(
         base_prompt=BASE_PROMPT,
         workspace=workspace,
@@ -77,6 +75,7 @@ def _run_agent(question: str, workspace: Path) -> AgentTrace:
         messages=messages,
         tools=TOOL_DEFINITIONS,
         completion=litellm.completion,
+        workspace=workspace,
     ):
         trace.events.append(event)
         if isinstance(event, ToolCallEvent):

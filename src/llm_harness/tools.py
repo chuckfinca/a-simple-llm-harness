@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import math
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
-from llm_harness.files import get_workspace
 from llm_harness.sandbox import run_file_tool, run_python
 
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
@@ -185,7 +185,9 @@ def _get_current_time() -> str:
     return json.dumps({"utc": datetime.now(UTC).isoformat()})
 
 
-def execute_tool(name: str, arguments_json: str) -> str:
+def execute_tool(
+    name: str, arguments_json: str, *, workspace: Path | None = None
+) -> str:
     try:
         args: dict[str, Any] = json.loads(arguments_json) if arguments_json else {}
     except json.JSONDecodeError:
@@ -194,7 +196,6 @@ def execute_tool(name: str, arguments_json: str) -> str:
     if name == "run_python":
         return run_python(args.get("code", ""))
     if name in ("list_files", "search_files", "read_file"):
-        workspace = get_workspace()
         if workspace is None:
             return json.dumps({"error": "Workspace not configured"})
         return run_file_tool(name, args, workspace)
