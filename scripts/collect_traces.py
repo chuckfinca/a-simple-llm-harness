@@ -11,12 +11,14 @@ traces/<model>/<workspace>/<slug>.json for manual review.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 import litellm
@@ -38,28 +40,88 @@ BASE_PROMPT = (
     "code execution, and file exploration."
 )
 
-QUESTIONS: dict[str, list[str]] = {
+
+@dataclass
+class Question:
+    text: str
+    # Answer must contain ALL of these (case-insensitive)
+    must_contain: list[str] = field(default_factory=list)
+    # Answer must contain AT LEAST ONE of these (case-insensitive)
+    must_contain_any: list[str] = field(default_factory=list)
+    # Answer must NOT contain any of these (case-insensitive)
+    must_not_contain: list[str] = field(default_factory=list)
+    # Must have at least this many tool calls
+    min_tool_calls: int = 1
+
+
+QUESTIONS: dict[str, list[Question]] = {
     "federalist-papers": [
-        "What does Federalist No. 10 argue about factions?",
-        "Which papers discuss the judiciary?",
-        "What are the main themes across the Federalist Papers?",
-        "What does Hamilton say about standing armies?",
-        "How do Hamilton and Madison differ on federal power?",
+        Question(
+            text="What does Federalist No. 10 argue about factions?",
+            must_contain=["madison", "faction"],
+        ),
+        Question(
+            text="Which papers discuss the judiciary?",
+            must_contain_any=["78", "79", "80", "81"],
+        ),
+        Question(
+            text="What are the main themes across the Federalist Papers?",
+            min_tool_calls=3,
+        ),
+        Question(
+            text="What does Hamilton say about standing armies?",
+            must_contain=["hamilton"],
+            must_contain_any=["army", "armies", "military"],
+        ),
+        Question(
+            text="How do Hamilton and Madison differ on federal power?",
+            must_contain=["hamilton", "madison"],
+        ),
     ],
     "origin-of-species": [
-        "What does Darwin say about natural selection in Chapter 4?",
-        "How does Darwin explain the struggle for existence?",
-        "What examples of variation under domestication does Darwin give?",
+        Question(
+            text="What does Darwin say about natural selection in Chapter 4?",
+            must_contain=["natural selection"],
+        ),
+        Question(
+            text="How does Darwin explain the struggle for existence?",
+            must_contain_any=["geometrical", "geometric", "increase"],
+        ),
+        Question(
+            text="What examples of variation under domestication does Darwin give?",
+            must_contain_any=["pigeon", "dog", "cattle", "horse", "sheep"],
+        ),
     ],
     "sherlock-holmes": [
-        'What happens in "A Scandal in Bohemia"?',
-        "How does Holmes solve the case in The Speckled Band?",
-        "What methods does Holmes use across the stories?",
+        Question(
+            text='What happens in "A Scandal in Bohemia"?',
+            must_contain=["irene adler"],
+            must_contain_any=["photograph", "king"],
+        ),
+        Question(
+            text="How does Holmes solve the case in The Speckled Band?",
+            must_contain_any=["snake", "adder", "ventilator"],
+        ),
+        Question(
+            text="What methods does Holmes use across the stories?",
+            min_tool_calls=3,
+        ),
     ],
     "world-factbook": [
-        "What is the population of Japan?",
-        "Compare the economies of Brazil and Argentina.",
-        "Which countries in the dataset are in Africa?",
+        Question(
+            text="What is the population of Japan?",
+            must_contain_any=["123,201,945", "123.2 million", "123 million"],
+        ),
+        Question(
+            text="Compare the economies of Brazil and Argentina.",
+            must_contain=["brazil", "argentina"],
+            min_tool_calls=2,
+        ),
+        Question(
+            text="Which countries in the dataset are in Africa?",
+            must_contain_any=["nigeria", "kenya", "ghana", "egypt", "ethiopia"],
+            min_tool_calls=2,
+        ),
     ],
 }
 
@@ -81,9 +143,36 @@ class Trace:
     completion_tokens: int | None = None
     cost: float | None = None
     error: str | None = None
+    assertions: dict[str, bool] = field(default_factory=dict)
+    passed: bool = False
 
 
-def run_question(model: str, workspace_name: str, question: str) -> Trace:
+def check_assertions(trace: Trace, question: Question) -> None:
+    answer = (trace.answer or "").lower()
+    tool_count = len(trace.tool_calls)
+
+    if question.must_contain:
+        for term in question.must_contain:
+            trace.assertions[f"contains '{term}'"] = term.lower() in answer
+
+    if question.must_contain_any:
+        found = any(term.lower() in answer for term in question.must_contain_any)
+        trace.assertions[f"contains_any {question.must_contain_any}"] = found
+
+    if question.must_not_contain:
+        for term in question.must_not_contain:
+            trace.assertions[f"not contains '{term}'"] = term.lower() not in answer
+
+    trace.assertions[f"min_tool_calls >= {question.min_tool_calls}"] = (
+        tool_count >= question.min_tool_calls
+    )
+
+    trace.assertions["has_answer"] = trace.answer is not None and trace.error is None
+
+    trace.passed = all(trace.assertions.values())
+
+
+def run_question(model: str, workspace_name: str, question: Question) -> Trace:
     workspace = (Path(__file__).parent.parent / "test-data" / workspace_name).resolve()
 
     system_prompt = build_system_prompt(
@@ -93,10 +182,10 @@ def run_question(model: str, workspace_name: str, question: str) -> Trace:
 
     messages: list[Message] = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": question},
+        {"role": "user", "content": question.text},
     ]
 
-    trace = Trace(workspace=workspace_name, question=question)
+    trace = Trace(workspace=workspace_name, question=question.text)
 
     try:
         for event in run_agent_loop(
@@ -119,6 +208,7 @@ def run_question(model: str, workspace_name: str, question: str) -> Trace:
     except Exception as exc:
         trace.error = str(exc)
 
+    check_assertions(trace, question)
     return trace
 
 
@@ -139,7 +229,7 @@ def main() -> None:
     model_slug = slugify(model)
     traces_dir = Path(__file__).parent.parent / "traces" / model_slug
 
-    jobs: list[tuple[str, str]] = []
+    jobs: list[tuple[str, Question]] = []
     for workspace_name, questions in QUESTIONS.items():
         workspace_dir = traces_dir / workspace_name
         workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -148,18 +238,28 @@ def main() -> None:
 
     total = len(jobs)
     completed = 0
+    passed = 0
+    failed = 0
     start_all = time.monotonic()
+    results: list[Trace] = []
+    wall_times: dict[str, float] = {}
 
     if args.workers <= 1:
         for workspace_name, question in jobs:
             completed += 1
             print(
-                f"[{completed}/{total}] {workspace_name}: {question[:60]}...",
+                f"[{completed}/{total}] {workspace_name}: {question.text[:60]}...",
                 flush=True,
             )
             start = time.monotonic()
             trace = run_question(model, workspace_name, question)
             elapsed = time.monotonic() - start
+            results.append(trace)
+            wall_times[slugify(trace.question)] = elapsed
+            if trace.passed:
+                passed += 1
+            else:
+                failed += 1
             _save_and_report(trace, traces_dir, elapsed)
     else:
         print(f"Running {total} questions with {args.workers} workers\n", flush=True)
@@ -174,26 +274,173 @@ def main() -> None:
                 elapsed = time.monotonic() - start
                 completed += 1
                 print(
-                    f"[{completed}/{total}] {workspace_name}: {question[:60]}...",
+                    f"[{completed}/{total}] {workspace_name}: {question.text[:60]}...",
                     flush=True,
                 )
                 trace = future.result()
+                results.append(trace)
+                wall_times[slugify(trace.question)] = elapsed
+                if trace.passed:
+                    passed += 1
+                else:
+                    failed += 1
                 _save_and_report(trace, traces_dir, elapsed)
 
     total_elapsed = time.monotonic() - start_all
     print(f"\nTraces saved to {traces_dir} ({total_elapsed:.1f}s total)")
+    print(f"Results: {passed} passed, {failed} failed, {total} total")
+
+    if failed > 0:
+        print("\nFailed assertions:")
+        for trace in results:
+            if not trace.passed:
+                print(f"  {trace.workspace}: {trace.question[:60]}")
+                for name, ok in trace.assertions.items():
+                    if not ok:
+                        print(f"    FAIL: {name}")
+
+    _append_csv(results, model, wall_times)
+
+
+CSV_COLUMNS = [
+    "timestamp",
+    "model",
+    "workspace",
+    "question",
+    "passed",
+    # Instruction following
+    "used_tools",
+    "has_citations",
+    "has_sources_section",
+    "citation_count",
+    "files_accessed",
+    "tool_sequence",
+    # Performance
+    "tool_calls",
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+    "cost_usd",
+    "latency_s",
+    "wall_time_s",
+    # Diagnostics
+    "failed_assertions",
+    "error",
+]
+
+
+def _extract_instruction_metrics(trace: Trace) -> dict[str, object]:
+    answer = trace.answer or ""
+    tool_calls = trace.tool_calls
+
+    # Did it use any tools?
+    used_tools = len(tool_calls) > 0
+
+    # Did it cite sources with [1], [2] style references?
+    citations = re.findall(r"\[\d+\]", answer)
+    has_citations = len(citations) > 0
+    citation_count = len(set(citations))
+
+    # Did it include a Sources section?
+    has_sources_section = bool(re.search(r"(?i)\bsources?\s*:", answer))
+
+    # How many unique files did it touch?
+    files = set()
+    for tc in tool_calls:
+        try:
+            args = json.loads(tc["arguments"])
+        except (json.JSONDecodeError, KeyError):
+            continue
+        if tc["name"] == "read_file" and "path" in args:
+            files.add(args["path"])
+        elif tc["name"] == "search_files":
+            # Count search as touching files via results (we don't have results here,
+            # but the search itself shows intent to access content)
+            pass
+        elif tc["name"] == "list_files":
+            pass
+    files_accessed = len(files)
+
+    # Tool call sequence (compact representation)
+    name_map = {
+        "list_files": "L",
+        "search_files": "S",
+        "read_file": "R",
+        "run_python": "P",
+        "calculator": "C",
+        "get_current_time": "T",
+    }
+    tool_sequence = "→".join(name_map.get(tc["name"], "?") for tc in tool_calls)
+
+    return {
+        "used_tools": used_tools,
+        "has_citations": has_citations,
+        "has_sources_section": has_sources_section,
+        "citation_count": citation_count,
+        "files_accessed": files_accessed,
+        "tool_sequence": tool_sequence,
+    }
+
+
+def _append_csv(
+    results: list[Trace],
+    model: str,
+    wall_times: dict[str, float],
+) -> None:
+    csv_path = Path(__file__).parent.parent / "traces" / "results.csv"
+    file_exists = csv_path.exists()
+
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
+
+    with open(csv_path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
+        if not file_exists:
+            writer.writeheader()
+
+        for trace in results:
+            prompt_tokens = trace.prompt_tokens or 0
+            completion_tokens = trace.completion_tokens or 0
+            failed = [name for name, ok in trace.assertions.items() if not ok]
+            question_key = slugify(trace.question)
+            metrics = _extract_instruction_metrics(trace)
+            writer.writerow(
+                {
+                    "timestamp": timestamp,
+                    "model": model,
+                    "workspace": trace.workspace,
+                    "question": trace.question,
+                    "passed": trace.passed,
+                    **metrics,
+                    "tool_calls": len(trace.tool_calls),
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
+                    "cost_usd": f"{trace.cost:.6f}" if trace.cost else "",
+                    "latency_s": trace.latency_s,
+                    "wall_time_s": round(wall_times.get(question_key, 0), 1),
+                    "failed_assertions": "; ".join(failed) if failed else "",
+                    "error": trace.error or "",
+                }
+            )
+
+    print(f"Results appended to {csv_path}", flush=True)
 
 
 def _save_and_report(trace: Trace, traces_dir: Path, elapsed: float) -> None:
     out_file = traces_dir / trace.workspace / f"{slugify(trace.question)}.json"
     out_file.write_text(json.dumps(asdict(trace), indent=2, default=str))
 
-    status = "OK" if trace.answer else "ERROR"
+    status = "PASS" if trace.passed else "FAIL"
     tools_used = len(trace.tool_calls)
     print(f"  {status} | {tools_used} tool calls | {elapsed:.1f}s", flush=True)
 
+    if not trace.passed:
+        for name, ok in trace.assertions.items():
+            if not ok:
+                print(f"    FAIL: {name}", flush=True)
+
     if trace.error:
-        print(f"  ERROR: {trace.error}", flush=True)
+        print(f"    ERROR: {trace.error}", flush=True)
 
 
 if __name__ == "__main__":
