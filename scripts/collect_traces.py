@@ -35,7 +35,7 @@ from llm_harness.types import (
 
 load_dotenv()
 
-BASE_PROMPT = (
+EVAL_PROMPT = (
     "You are a helpful assistant with access to tools for computation, "
     "code execution, and file exploration."
 )
@@ -176,7 +176,7 @@ def run_question(model: str, workspace_name: str, question: Question) -> Trace:
     workspace = (Path(__file__).parent.parent / "test-data" / workspace_name).resolve()
 
     system_prompt = build_system_prompt(
-        base_prompt=BASE_PROMPT,
+        base_prompt=EVAL_PROMPT,
         workspace=workspace,
     )
 
@@ -212,6 +212,25 @@ def run_question(model: str, workspace_name: str, question: Question) -> Trace:
     return trace
 
 
+def _run_all(model: str, jobs: list[tuple[str, Question]], workers: int):
+    """Yield (workspace_name, question, trace, elapsed) for each completed job."""
+    if workers <= 1:
+        for workspace_name, question in jobs:
+            start = time.monotonic()
+            trace = run_question(model, workspace_name, question)
+            yield workspace_name, question, trace, time.monotonic() - start
+    else:
+        print(f"Running {len(jobs)} questions with {workers} workers\n", flush=True)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {}
+            for workspace_name, question in jobs:
+                future = pool.submit(run_question, model, workspace_name, question)
+                futures[future] = (workspace_name, question, time.monotonic())
+            for future in as_completed(futures):
+                workspace_name, question, start = futures[future]
+                yield workspace_name, question, future.result(), time.monotonic() - start
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect agent traces")
     parser.add_argument(
@@ -237,54 +256,26 @@ def main() -> None:
             jobs.append((workspace_name, question))
 
     total = len(jobs)
-    completed = 0
     passed = 0
     failed = 0
     start_all = time.monotonic()
     results: list[Trace] = []
     wall_times: dict[str, float] = {}
 
-    if args.workers <= 1:
-        for workspace_name, question in jobs:
-            completed += 1
-            print(
-                f"[{completed}/{total}] {workspace_name}: {question.text[:60]}...",
-                flush=True,
-            )
-            start = time.monotonic()
-            trace = run_question(model, workspace_name, question)
-            elapsed = time.monotonic() - start
-            results.append(trace)
-            wall_times[slugify(trace.question)] = elapsed
-            if trace.passed:
-                passed += 1
-            else:
-                failed += 1
-            _save_and_report(trace, traces_dir, elapsed)
-    else:
-        print(f"Running {total} questions with {args.workers} workers\n", flush=True)
-        futures = {}
-        with ThreadPoolExecutor(max_workers=args.workers) as pool:
-            for workspace_name, question in jobs:
-                future = pool.submit(run_question, model, workspace_name, question)
-                futures[future] = (workspace_name, question, time.monotonic())
-
-            for future in as_completed(futures):
-                workspace_name, question, start = futures[future]
-                elapsed = time.monotonic() - start
-                completed += 1
-                print(
-                    f"[{completed}/{total}] {workspace_name}: {question.text[:60]}...",
-                    flush=True,
-                )
-                trace = future.result()
-                results.append(trace)
-                wall_times[slugify(trace.question)] = elapsed
-                if trace.passed:
-                    passed += 1
-                else:
-                    failed += 1
-                _save_and_report(trace, traces_dir, elapsed)
+    for completed, (workspace_name, question, trace, elapsed) in enumerate(
+        _run_all(model, jobs, args.workers), 1
+    ):
+        print(
+            f"[{completed}/{total}] {workspace_name}: {question.text[:60]}...",
+            flush=True,
+        )
+        results.append(trace)
+        wall_times[slugify(trace.question)] = elapsed
+        if trace.passed:
+            passed += 1
+        else:
+            failed += 1
+        _save_and_report(trace, traces_dir, elapsed)
 
     total_elapsed = time.monotonic() - start_all
     print(f"\nTraces saved to {traces_dir} ({total_elapsed:.1f}s total)")
@@ -331,38 +322,25 @@ CSV_COLUMNS = [
 
 def _extract_instruction_metrics(trace: Trace) -> dict[str, object]:
     answer = trace.answer or ""
-    tool_calls = trace.tool_calls
 
-    # Did it use any tools?
-    used_tools = len(tool_calls) > 0
+    used_tools = len(trace.tool_calls) > 0
 
-    # Did it cite sources with [1], [2] style references?
     citations = re.findall(r"\[\d+\]", answer)
     has_citations = len(citations) > 0
     citation_count = len(set(citations))
 
-    # Did it include a Sources section?
     has_sources_section = bool(re.search(r"(?i)\bsources?\s*:", answer))
 
-    # How many unique files did it touch?
-    files = set()
-    for tc in tool_calls:
+    files_read = set()
+    for tool_call in trace.tool_calls:
         try:
-            args = json.loads(tc["arguments"])
+            arguments = json.loads(tool_call["arguments"])
         except (json.JSONDecodeError, KeyError):
             continue
-        if tc["name"] == "read_file" and "path" in args:
-            files.add(args["path"])
-        elif tc["name"] == "search_files":
-            # Count search as touching files via results (we don't have results here,
-            # but the search itself shows intent to access content)
-            pass
-        elif tc["name"] == "list_files":
-            pass
-    files_accessed = len(files)
+        if tool_call["name"] == "read_file" and "path" in arguments:
+            files_read.add(arguments["path"])
 
-    # Tool call sequence (compact representation)
-    name_map = {
+    tool_abbreviations = {
         "list_files": "L",
         "search_files": "S",
         "read_file": "R",
@@ -370,14 +348,17 @@ def _extract_instruction_metrics(trace: Trace) -> dict[str, object]:
         "calculator": "C",
         "get_current_time": "T",
     }
-    tool_sequence = "→".join(name_map.get(tc["name"], "?") for tc in tool_calls)
+    tool_sequence = "→".join(
+        tool_abbreviations.get(tool_call["name"], "?")
+        for tool_call in trace.tool_calls
+    )
 
     return {
         "used_tools": used_tools,
         "has_citations": has_citations,
         "has_sources_section": has_sources_section,
         "citation_count": citation_count,
-        "files_accessed": files_accessed,
+        "files_accessed": len(files_read),
         "tool_sequence": tool_sequence,
     }
 
@@ -400,8 +381,9 @@ def _append_csv(
         for trace in results:
             prompt_tokens = trace.prompt_tokens or 0
             completion_tokens = trace.completion_tokens or 0
-            failed = [name for name, ok in trace.assertions.items() if not ok]
-            question_key = slugify(trace.question)
+            failed_assertions = [
+                name for name, ok in trace.assertions.items() if not ok
+            ]
             metrics = _extract_instruction_metrics(trace)
             writer.writerow(
                 {
@@ -417,8 +399,12 @@ def _append_csv(
                     "total_tokens": prompt_tokens + completion_tokens,
                     "cost_usd": f"{trace.cost:.6f}" if trace.cost else "",
                     "latency_s": trace.latency_s,
-                    "wall_time_s": round(wall_times.get(question_key, 0), 1),
-                    "failed_assertions": "; ".join(failed) if failed else "",
+                    "wall_time_s": round(
+                        wall_times.get(slugify(trace.question), 0), 1
+                    ),
+                    "failed_assertions": (
+                        "; ".join(failed_assertions) if failed_assertions else ""
+                    ),
                     "error": trace.error or "",
                 }
             )
