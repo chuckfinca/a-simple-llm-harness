@@ -44,6 +44,7 @@ EVAL_PROMPT = (
 @dataclass
 class Question:
     text: str
+    category: str
     # Answer must contain ALL of these (case-insensitive)
     must_contain: list[str] = field(default_factory=list)
     # Answer must contain AT LEAST ONE of these (case-insensitive)
@@ -58,67 +59,81 @@ QUESTIONS: dict[str, list[Question]] = {
     "federalist-papers": [
         Question(
             text="What does Federalist No. 10 argue about factions?",
+            category="single_doc",
             must_contain=["madison", "faction"],
         ),
         Question(
             text="Which papers discuss the judiciary?",
+            category="enumeration",
             must_contain_any=["78", "79", "80", "81"],
         ),
         Question(
             text="What are the main themes across the Federalist Papers?",
+            category="multi_doc",
             min_tool_calls=3,
         ),
         Question(
             text="What does Hamilton say about standing armies?",
+            category="single_doc",
             must_contain=["hamilton"],
             must_contain_any=["army", "armies", "military"],
         ),
         Question(
             text="How do Hamilton and Madison differ on federal power?",
+            category="comparison",
             must_contain=["hamilton", "madison"],
         ),
     ],
     "origin-of-species": [
         Question(
             text="What does Darwin say about natural selection in Chapter 4?",
+            category="single_doc",
             must_contain=["natural selection"],
         ),
         Question(
             text="How does Darwin explain the struggle for existence?",
+            category="single_doc",
             must_contain_any=["geometrical", "geometric", "increase"],
         ),
         Question(
             text="What examples of variation under domestication does Darwin give?",
+            category="enumeration",
             must_contain_any=["pigeon", "dog", "cattle", "horse", "sheep"],
         ),
     ],
     "sherlock-holmes": [
         Question(
             text='What happens in "A Scandal in Bohemia"?',
+            category="single_doc",
             must_contain=["irene adler"],
             must_contain_any=["photograph", "king"],
         ),
         Question(
             text="How does Holmes solve the case in The Speckled Band?",
+            category="single_doc",
             must_contain_any=["snake", "adder", "ventilator"],
         ),
         Question(
             text="What methods does Holmes use across the stories?",
+            category="multi_doc",
             min_tool_calls=3,
         ),
     ],
     "world-factbook": [
         Question(
             text="What is the population of Japan?",
+            category="single_fact",
             must_contain_any=["123,201,945", "123.2 million", "123 million"],
         ),
         Question(
             text="Compare the economies of Brazil and Argentina.",
+            category="comparison",
             must_contain=["brazil", "argentina"],
             min_tool_calls=2,
         ),
         Question(
             text="Which countries in the dataset are in Africa?",
+            category="enumeration",
             must_contain_any=["nigeria", "kenya", "ghana", "egypt", "ethiopia"],
             min_tool_calls=2,
         ),
@@ -136,6 +151,7 @@ def slugify(text: str) -> str:
 class Trace:
     workspace: str
     question: str
+    category: str = ""
     answer: str | None = None
     tool_calls: list[dict[str, str]] = field(default_factory=list)
     latency_s: float | None = None
@@ -185,7 +201,7 @@ def run_question(model: str, workspace_name: str, question: Question) -> Trace:
         {"role": "user", "content": question.text},
     ]
 
-    trace = Trace(workspace=workspace_name, question=question.text)
+    trace = Trace(workspace=workspace_name, question=question.text, category=question.category)
 
     try:
         for event in run_agent_loop(
@@ -297,6 +313,7 @@ CSV_COLUMNS = [
     "timestamp",
     "model",
     "workspace",
+    "category",
     "question",
     "passed",
     # Instruction following
@@ -390,6 +407,7 @@ def _append_csv(
                     "timestamp": timestamp,
                     "model": model,
                     "workspace": trace.workspace,
+                    "category": trace.category,
                     "question": trace.question,
                     "passed": trace.passed,
                     **metrics,
