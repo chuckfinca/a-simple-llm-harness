@@ -87,8 +87,8 @@ def _extract_response(response_obj: Any) -> dict[str, Any] | None:
     }
     if getattr(msg, "tool_calls", None):
         result["tool_calls"] = [
-            {"name": tc.function.name, "arguments": tc.function.arguments}
-            for tc in msg.tool_calls
+            {"name": tool_call.function.name, "arguments": tool_call.function.arguments}
+            for tool_call in msg.tool_calls
         ]
     return result
 

@@ -23,24 +23,23 @@ def _parse_response_message(response: Any) -> Message:
     if msg.tool_calls:
         result["tool_calls"] = [
             {
-                "id": tc.id,
+                "id": tool_call.id,
                 "type": "function",
                 "function": {
-                    "name": tc.function.name,
-                    "arguments": tc.function.arguments,
+                    "name": tool_call.function.name,
+                    "arguments": tool_call.function.arguments,
                 },
             }
-            for tc in msg.tool_calls
+            for tool_call in msg.tool_calls
         ]
     return result
 
 
 def _extract_usage(response: Any) -> tuple[int, int]:
     if hasattr(response, "usage") and response.usage:
-        return (
-            getattr(response.usage, "prompt_tokens", 0) or 0,
-            getattr(response.usage, "completion_tokens", 0) or 0,
-        )
+        prompt_tokens = getattr(response.usage, "prompt_tokens", None)
+        completion_tokens = getattr(response.usage, "completion_tokens", None)
+        return (prompt_tokens or 0, completion_tokens or 0)
     return 0, 0
 
 
@@ -93,11 +92,15 @@ def run_agent_loop(
             return
 
         for tool_call in assistant_msg["tool_calls"]:
-            fn = tool_call["function"]
-            yield ToolCallEvent(name=fn["name"], arguments=fn["arguments"])
+            tool_function = tool_call["function"]
+            yield ToolCallEvent(
+                name=tool_function["name"], arguments=tool_function["arguments"]
+            )
 
-            result = execute_tool(fn["name"], fn["arguments"], workspace=workspace)
-            yield ToolResultEvent(name=fn["name"], result=result)
+            result = execute_tool(
+                tool_function["name"], tool_function["arguments"], workspace=workspace
+            )
+            yield ToolResultEvent(name=tool_function["name"], result=result)
 
             messages.append(
                 {
