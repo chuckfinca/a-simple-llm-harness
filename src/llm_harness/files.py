@@ -8,7 +8,7 @@ MAX_READ_CHARS = 8000
 MAX_SEARCH_RESULTS = 30
 
 
-def _resolve_safe(workspace: Path, relative_path: str) -> Path | None:
+def _resolve_within_workspace(workspace: Path, relative_path: str) -> Path | None:
     resolved = (workspace / relative_path).resolve()
     if not resolved.is_relative_to(workspace):
         return None
@@ -16,7 +16,7 @@ def _resolve_safe(workspace: Path, relative_path: str) -> Path | None:
 
 
 def list_files(workspace: Path, path: str = ".", pattern: str = "") -> str:
-    target = _resolve_safe(workspace, path)
+    target = _resolve_within_workspace(workspace, path)
     if target is None:
         return json.dumps({"error": f"Invalid path: {path}"})
     if not target.is_dir():
@@ -50,7 +50,7 @@ def list_files(workspace: Path, path: str = ".", pattern: str = "") -> str:
 def read_file(
     workspace: Path, path: str, offset: int = 0, limit: int | None = None
 ) -> str:
-    target = _resolve_safe(workspace, path)
+    target = _resolve_within_workspace(workspace, path)
     if target is None:
         return json.dumps({"error": f"Invalid path: {path}"})
     if not target.is_file():

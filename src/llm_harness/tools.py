@@ -175,6 +175,7 @@ def _calculator(expression: str) -> str:
     allowed_names["abs"] = abs
     allowed_names["round"] = round
     try:
+        # Safe: __builtins__ is empty and allowed_names contains only math functions
         result = eval(expression, {"__builtins__": {}}, allowed_names)  # noqa: S307
     except Exception as exc:
         return json.dumps({"error": str(exc)})
