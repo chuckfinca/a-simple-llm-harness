@@ -12,6 +12,7 @@ MAX_OUTPUT_CHARS = 4000
 CONTAINER_PREFIX = "lh-sandbox-"
 DOCKERFILE_DIR = Path(__file__).resolve().parent.parent.parent / "sandbox"
 
+# Avoid re-checking/rebuilding the Docker image on every tool call
 _image_ready = False
 
 
