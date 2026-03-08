@@ -32,10 +32,8 @@ from llm_harness.types import (
 load_dotenv()
 
 BASE_PROMPT = (
-    "You are a helpful research assistant with access to tools for "
-    "computation, code execution, and file exploration. When answering "
-    "questions about documents in the workspace, use the file tools to "
-    "find evidence before answering. Do not guess at document contents."
+    "You are a helpful assistant with access to tools for computation, "
+    "code execution, and file exploration."
 )
 
 QUESTIONS: dict[str, list[str]] = {
@@ -145,7 +143,10 @@ def main() -> None:
             slug = slugify(question)
             out_file = workspace_dir / f"{slug}.json"
 
-            print(f"[{completed}/{total}] {workspace_name}: {question[:60]}...")
+            print(
+                f"[{completed}/{total}] {workspace_name}: {question[:60]}...",
+                flush=True,
+            )
 
             start = time.monotonic()
             trace = run_question(model, workspace_name, question)
@@ -155,10 +156,10 @@ def main() -> None:
 
             status = "OK" if trace.answer else "ERROR"
             tools_used = len(trace.tool_calls)
-            print(f"  {status} | {tools_used} tool calls | {elapsed:.1f}s")
+            print(f"  {status} | {tools_used} tool calls | {elapsed:.1f}s", flush=True)
 
             if trace.error:
-                print(f"  ERROR: {trace.error}")
+                print(f"  ERROR: {trace.error}", flush=True)
 
     print(f"\nTraces saved to {traces_dir}")
 

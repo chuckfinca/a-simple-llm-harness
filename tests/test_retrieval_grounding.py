@@ -40,10 +40,8 @@ pytestmark = pytest.mark.integration
 
 TEST_DATA = Path(__file__).parent.parent / "test-data"
 BASE_PROMPT = (
-    "You are a helpful research assistant with access to tools for "
-    "computation, code execution, and file exploration. When answering "
-    "questions about documents in the workspace, use the file tools to "
-    "find evidence before answering. Do not guess at document contents."
+    "You are a helpful assistant with access to tools for computation, "
+    "code execution, and file exploration."
 )
 
 
