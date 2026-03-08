@@ -2,6 +2,7 @@
 
 Usage:
     uv run python scripts/collect_traces.py
+    uv run python scripts/collect_traces.py --workers 4
 
 Requires LH_MODEL in .env or environment. Traces are saved as JSON in
 traces/<model>/<workspace>/<slug>.json for manual review.
@@ -9,10 +10,12 @@ traces/<model>/<workspace>/<slug>.json for manual review.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -120,6 +123,12 @@ def run_question(model: str, workspace_name: str, question: str) -> Trace:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Collect agent traces")
+    parser.add_argument(
+        "--workers", type=int, default=1, help="Number of parallel workers (default: 1)"
+    )
+    args = parser.parse_args()
+
     litellm.suppress_debug_info = True
 
     model = os.environ.get("LH_MODEL")
@@ -130,37 +139,61 @@ def main() -> None:
     model_slug = slugify(model)
     traces_dir = Path(__file__).parent.parent / "traces" / model_slug
 
-    total = sum(len(qs) for qs in QUESTIONS.values())
-    completed = 0
-
+    jobs: list[tuple[str, str]] = []
     for workspace_name, questions in QUESTIONS.items():
         workspace_dir = traces_dir / workspace_name
         workspace_dir.mkdir(parents=True, exist_ok=True)
-
         for question in questions:
-            completed += 1
-            slug = slugify(question)
-            out_file = workspace_dir / f"{slug}.json"
+            jobs.append((workspace_name, question))
 
+    total = len(jobs)
+    completed = 0
+    start_all = time.monotonic()
+
+    if args.workers <= 1:
+        for workspace_name, question in jobs:
+            completed += 1
             print(
                 f"[{completed}/{total}] {workspace_name}: {question[:60]}...",
                 flush=True,
             )
-
             start = time.monotonic()
             trace = run_question(model, workspace_name, question)
             elapsed = time.monotonic() - start
+            _save_and_report(trace, traces_dir, elapsed)
+    else:
+        print(f"Running {total} questions with {args.workers} workers\n", flush=True)
+        futures = {}
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            for workspace_name, question in jobs:
+                future = pool.submit(run_question, model, workspace_name, question)
+                futures[future] = (workspace_name, question, time.monotonic())
 
-            out_file.write_text(json.dumps(asdict(trace), indent=2, default=str))
+            for future in as_completed(futures):
+                workspace_name, question, start = futures[future]
+                elapsed = time.monotonic() - start
+                completed += 1
+                print(
+                    f"[{completed}/{total}] {workspace_name}: {question[:60]}...",
+                    flush=True,
+                )
+                trace = future.result()
+                _save_and_report(trace, traces_dir, elapsed)
 
-            status = "OK" if trace.answer else "ERROR"
-            tools_used = len(trace.tool_calls)
-            print(f"  {status} | {tools_used} tool calls | {elapsed:.1f}s", flush=True)
+    total_elapsed = time.monotonic() - start_all
+    print(f"\nTraces saved to {traces_dir} ({total_elapsed:.1f}s total)")
 
-            if trace.error:
-                print(f"  ERROR: {trace.error}", flush=True)
 
-    print(f"\nTraces saved to {traces_dir}")
+def _save_and_report(trace: Trace, traces_dir: Path, elapsed: float) -> None:
+    out_file = traces_dir / trace.workspace / f"{slugify(trace.question)}.json"
+    out_file.write_text(json.dumps(asdict(trace), indent=2, default=str))
+
+    status = "OK" if trace.answer else "ERROR"
+    tools_used = len(trace.tool_calls)
+    print(f"  {status} | {tools_used} tool calls | {elapsed:.1f}s", flush=True)
+
+    if trace.error:
+        print(f"  ERROR: {trace.error}", flush=True)
 
 
 if __name__ == "__main__":
