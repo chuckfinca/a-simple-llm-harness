@@ -31,6 +31,7 @@ from llm_harness.types import (
     Message,
     ResponseEvent,
     ToolCallEvent,
+    ToolResultEvent,
 )
 
 load_dotenv()
@@ -153,7 +154,7 @@ class Trace:
     question: str
     category: str = ""
     answer: str | None = None
-    tool_calls: list[dict[str, str]] = field(default_factory=list)
+    tool_calls: list[dict] = field(default_factory=list)
     latency_s: float | None = None
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
@@ -188,6 +189,33 @@ def check_assertions(trace: Trace, question: Question) -> None:
     trace.passed = all(trace.assertions.values())
 
 
+def _parse_tool_result(
+    tool_name: str, result: str
+) -> tuple[int, bool, str | None]:
+    try:
+        data = json.loads(result)
+    except (json.JSONDecodeError, TypeError):
+        return 0, False, "invalid JSON"
+
+    if "error" in data:
+        return 0, False, str(data["error"])
+
+    if tool_name == "search_files":
+        count = data.get("total_matches", 0)
+    elif tool_name == "list_files":
+        count = data.get("count", 0)
+    elif tool_name == "read_file":
+        count = data.get("lines_returned", 0)
+    elif tool_name == "run_python":
+        count = 1 if data.get("exit_code") == 0 else 0
+    elif tool_name == "calculator":
+        count = 1 if "result" in data else 0
+    else:
+        count = 1
+
+    return count, count > 0, None
+
+
 def run_question(model: str, workspace_name: str, question: Question) -> Trace:
     workspace = (Path(__file__).parent.parent / "test-data" / workspace_name).resolve()
 
@@ -218,6 +246,13 @@ def run_question(model: str, workspace_name: str, question: Question) -> Trace:
             if isinstance(event, ToolCallEvent):
                 trace.tool_calls.append(
                     {"name": event.name, "arguments": event.arguments}
+                )
+            elif isinstance(event, ToolResultEvent):
+                result_count, hit, error = _parse_tool_result(
+                    event.name, event.result
+                )
+                trace.tool_calls[-1].update(
+                    {"result_count": result_count, "hit": hit, "error": error}
                 )
             elif isinstance(event, ResponseEvent):
                 trace.answer = event.content
@@ -311,11 +346,13 @@ def main() -> None:
                         print(f"    FAIL: {name}")
 
     _append_csv(results, model, wall_times)
+    _append_tool_calls_csv(results, model)
 
 
 CSV_COLUMNS = [
     "timestamp",
     "model",
+    "trace_id",
     "workspace",
     "category",
     "question",
@@ -410,6 +447,7 @@ def _append_csv(
                 {
                     "timestamp": timestamp,
                     "model": model,
+                    "trace_id": f"{trace.workspace}/{slugify(trace.question)}",
                     "workspace": trace.workspace,
                     "category": trace.category,
                     "question": trace.question,
@@ -432,6 +470,49 @@ def _append_csv(
             )
 
     print(f"Results appended to {csv_path}", flush=True)
+
+
+TOOL_CALL_COLUMNS = [
+    "timestamp",
+    "model",
+    "trace_id",
+    "step",
+    "tool",
+    "arguments",
+    "result_count",
+    "hit",
+    "error",
+]
+
+
+def _append_tool_calls_csv(results: list[Trace], model: str) -> None:
+    csv_path = Path(__file__).parent.parent / "traces" / "tool_calls.csv"
+    file_exists = csv_path.exists()
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
+
+    with csv_path.open("a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=TOOL_CALL_COLUMNS)
+        if not file_exists:
+            writer.writeheader()
+
+        for trace in results:
+            trace_id = f"{trace.workspace}/{slugify(trace.question)}"
+            for step, tool_call in enumerate(trace.tool_calls):
+                writer.writerow(
+                    {
+                        "timestamp": timestamp,
+                        "model": model,
+                        "trace_id": trace_id,
+                        "step": step,
+                        "tool": tool_call["name"],
+                        "arguments": tool_call["arguments"],
+                        "result_count": tool_call.get("result_count", ""),
+                        "hit": tool_call.get("hit", ""),
+                        "error": tool_call.get("error") or "",
+                    }
+                )
+
+    print(f"Tool calls appended to {csv_path}", flush=True)
 
 
 def _save_and_report(trace: Trace, traces_dir: Path, elapsed: float) -> None:
