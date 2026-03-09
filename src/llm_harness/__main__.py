@@ -9,21 +9,14 @@ from dotenv import load_dotenv
 from llm_harness.agent import run_agent_loop
 from llm_harness.display import (
     console,
+    display_event,
     print_error,
     print_header,
-    print_response,
-    print_tool_call,
-    print_tool_result,
 )
 from llm_harness.prompt import build_system_prompt
 from llm_harness.telemetry import JsonlLogger
 from llm_harness.tools import TOOL_DEFINITIONS
-from llm_harness.types import (
-    Message,
-    ResponseEvent,
-    ToolCallEvent,
-    ToolResultEvent,
-)
+from llm_harness.types import Message
 
 
 def main() -> None:
@@ -81,12 +74,7 @@ def main() -> None:
                 completion=litellm.completion,
                 workspace=workspace,
             ):
-                if isinstance(event, ToolCallEvent):
-                    print_tool_call(event)
-                elif isinstance(event, ToolResultEvent):
-                    print_tool_result(event)
-                elif isinstance(event, ResponseEvent):
-                    print_response(event)
+                display_event(event)
         except Exception as exc:
             messages.pop()
             print_error(str(exc))

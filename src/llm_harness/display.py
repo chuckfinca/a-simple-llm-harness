@@ -3,11 +3,20 @@ from __future__ import annotations
 from rich.console import Console
 from rich.markdown import Markdown
 
-from llm_harness.types import ResponseEvent, ToolCallEvent, ToolResultEvent
+from llm_harness.types import AgentEvent, ResponseEvent, ToolCallEvent, ToolResultEvent
 
 console = Console()
 
 INLINE_TRUNCATE = 200
+
+
+def display_event(event: AgentEvent) -> None:
+    if isinstance(event, ToolCallEvent):
+        print_tool_call(event)
+    elif isinstance(event, ToolResultEvent):
+        print_tool_result(event)
+    elif isinstance(event, ResponseEvent):
+        print_response(event)
 
 
 def print_header(model: str) -> None:
