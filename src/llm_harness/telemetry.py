@@ -61,7 +61,7 @@ class JsonlLogger(CustomLogger):
             if error is not None:
                 entry["error"] = str(error)
 
-            with open(self._log_path, "a") as f:
+            with self._log_path.open("a") as f:
                 f.write(json.dumps(entry, default=str) + "\n")
         except Exception as exc:
             print(f"telemetry: failed to write log entry: {exc}", file=sys.stderr)

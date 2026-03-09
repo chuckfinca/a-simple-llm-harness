@@ -201,7 +201,11 @@ def run_question(model: str, workspace_name: str, question: Question) -> Trace:
         {"role": "user", "content": question.text},
     ]
 
-    trace = Trace(workspace=workspace_name, question=question.text, category=question.category)
+    trace = Trace(
+        workspace=workspace_name,
+        question=question.text,
+        category=question.category,
+    )
 
     try:
         for event in run_agent_loop(
@@ -244,7 +248,8 @@ def _run_all(model: str, jobs: list[tuple[str, Question]], workers: int):
                 futures[future] = (workspace_name, question, time.monotonic())
             for future in as_completed(futures):
                 workspace_name, question, start = futures[future]
-                yield workspace_name, question, future.result(), time.monotonic() - start
+                elapsed = time.monotonic() - start
+                yield workspace_name, question, future.result(), elapsed
 
 
 def main() -> None:
@@ -268,8 +273,7 @@ def main() -> None:
     for workspace_name, questions in QUESTIONS.items():
         workspace_dir = traces_dir / workspace_name
         workspace_dir.mkdir(parents=True, exist_ok=True)
-        for question in questions:
-            jobs.append((workspace_name, question))
+        jobs.extend((workspace_name, question) for question in questions)
 
     total = len(jobs)
     passed = 0
@@ -390,7 +394,7 @@ def _append_csv(
 
     timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
 
-    with open(csv_path, "a", newline="") as f:
+    with csv_path.open("a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
         if not file_exists:
             writer.writeheader()

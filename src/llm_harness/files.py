@@ -102,7 +102,7 @@ def search_files(
                 continue
             try:
                 lines = filepath.read_text(errors="replace").splitlines()
-            except Exception:
+            except Exception:  # noqa: S112 — skip unreadable files (binary, permissions)
                 continue
 
             relative = str(filepath.relative_to(workspace))

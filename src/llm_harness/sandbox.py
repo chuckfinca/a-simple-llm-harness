@@ -17,7 +17,7 @@ _image_ready = False
 
 
 def ensure_sandbox_image() -> None:
-    global _image_ready  # noqa: PLW0603
+    global _image_ready
     if _image_ready:
         return
 
