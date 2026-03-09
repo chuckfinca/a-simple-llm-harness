@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -18,8 +19,8 @@ class JsonlLogger(CustomLogger):
         self,
         kwargs: dict[str, Any],
         response_obj: Any,
-        start_time: Any,
-        end_time: Any,
+        start_time: datetime,
+        end_time: datetime,
     ) -> None:
         self._write_entry(kwargs, response_obj, start_time, end_time)
 
@@ -27,8 +28,8 @@ class JsonlLogger(CustomLogger):
         self,
         kwargs: dict[str, Any],
         response_obj: Any,
-        start_time: Any,
-        end_time: Any,
+        start_time: datetime,
+        end_time: datetime,
     ) -> None:
         self._write_entry(
             kwargs, response_obj, start_time, end_time, error=kwargs.get("exception")
@@ -38,8 +39,8 @@ class JsonlLogger(CustomLogger):
         self,
         kwargs: dict[str, Any],
         response_obj: Any,
-        start_time: Any,
-        end_time: Any,
+        start_time: datetime,
+        end_time: datetime,
         error: Any = None,
     ) -> None:
         try:
@@ -67,9 +68,10 @@ class JsonlLogger(CustomLogger):
             print(f"telemetry: failed to write log entry: {exc}", file=sys.stderr)
 
 
-def _compute_latency(start_time: Any, end_time: Any) -> float | None:
+def _compute_latency(start_time: datetime, end_time: datetime) -> float | None:
     try:
-        return (end_time - start_time).total_seconds()
+        delta: float = (end_time - start_time).total_seconds()
+        return delta
     except Exception:
         return None
 

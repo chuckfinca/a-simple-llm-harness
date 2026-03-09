@@ -113,7 +113,7 @@ def run_python(code: str, *, timeout: int = TIMEOUT_SECONDS) -> str:
             )
 
 
-def run_file_tool(tool_name: str, arguments: dict, workspace: Path) -> str:
+def run_file_tool(tool_name: str, arguments: dict[str, object], workspace: Path) -> str:
     ensure_sandbox_image()
     files_module = Path(__file__).parent / "files.py"
     command_json = json.dumps({"fn": tool_name, **arguments})

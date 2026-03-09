@@ -1,9 +1,30 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, TypedDict
 
-Message = dict[str, Any]
+
+class ToolCallFunction(TypedDict):
+    name: str
+    arguments: str
+
+
+class ToolCallDict(TypedDict):
+    id: str
+    type: str
+    function: ToolCallFunction
+
+
+class _MessageRequired(TypedDict):
+    role: str
+    content: str | None
+
+
+class Message(_MessageRequired, total=False):
+    tool_calls: list[ToolCallDict]
+    tool_call_id: str
+
+
 ToolDef = dict[str, Any]
 
 
