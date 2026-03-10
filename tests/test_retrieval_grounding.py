@@ -14,7 +14,6 @@ Three mutation types:
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import tempfile
 from dataclasses import dataclass, field
@@ -136,12 +135,8 @@ class TestTextReplacement:
         # Change Japan's population to a fictional number
         japan = workspace / "japan.txt"
         original = japan.read_text()
-        modified = re.sub(
-            r"\d[\d,]*\d",
-            "42,000,000",
-            original,
-            count=1,  # Replace only the first large number
-        )
+        modified = original.replace("123,201,945", "42,000,000")
+        assert modified != original, "Population string not found in japan.txt"
         japan.write_text(modified)
 
         trace = _run_agent(
@@ -255,6 +250,9 @@ class TestDocumentRemoval:
                 "no document",
                 "not in the workspace",
                 "not present",
+                "not in this collection",
+                "may not be in",
+                "not included",
             ]
         )
         assert found_not_found, (

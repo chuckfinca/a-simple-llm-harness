@@ -4,7 +4,10 @@ from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
+import litellm
 import pytest
+
+litellm.suppress_debug_info = True
 
 MakeResponse = Callable[..., SimpleNamespace]
 
