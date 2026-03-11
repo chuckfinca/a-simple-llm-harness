@@ -253,6 +253,9 @@ class TestDocumentRemoval:
                 "not in this collection",
                 "may not be in",
                 "not included",
+                "cannot access",
+                "do not appear to contain",
+                "do not contain",
             ]
         )
         assert found_not_found, (
