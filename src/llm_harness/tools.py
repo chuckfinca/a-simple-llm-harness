@@ -68,10 +68,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "description": (
                 "Search file contents using exact regex matching. Returns "
                 "matching lines with file paths and line numbers. Matches "
-                "whole words by default. Capped at 30 results. NOTE: This "
-                "will NOT find synonyms or related terms. To search for a "
-                "concept, search for each variant separately (e.g., "
-                "'judge', 'judicial', 'judiciary' as separate calls)."
+                "whole words by default. Capped at 30 results. Use | for "
+                "variants (e.g., 'judge|judicial|judiciary') to search "
+                "multiple terms in one call."
             ),
             "parameters": {
                 "type": "object",
