@@ -25,15 +25,14 @@ def _collect_events(
     if messages is None:
         messages = [{"role": "user", "content": "test"}]
 
-    return list(
-        run_agent_loop(
-            model="test-model",
-            messages=messages,
-            tools=TOOL_DEFINITIONS,
-            completion=fake_completion,
-            max_turns=max_turns,
-        )
+    agent_run = run_agent_loop(
+        model="test-model",
+        messages=messages,
+        tools=TOOL_DEFINITIONS,
+        completion=fake_completion,
+        max_turns=max_turns,
     )
+    return list(agent_run)
 
 
 class TestAgentLoop:
@@ -127,3 +126,57 @@ class TestAgentLoop:
         assert isinstance(response.latency_s, float)
         assert isinstance(response.prompt_tokens, int)
         assert isinstance(response.completion_tokens, int)
+
+    def test_trace_populated_after_iteration(self, make_response: Any) -> None:
+        messages: list[Message] = [{"role": "user", "content": "test"}]
+
+        response_iter = iter([make_response(content="Hello!")])
+
+        def fake_completion(**kwargs: Any) -> Any:
+            return next(response_iter)
+
+        agent_run = run_agent_loop(
+            model="test-model",
+            messages=messages,
+            tools=TOOL_DEFINITIONS,
+            completion=fake_completion,
+        )
+        list(agent_run)
+
+        assert agent_run.trace.model == "test-model"
+        assert agent_run.trace.answer == "Hello!"
+        assert len(agent_run.trace.turns) == 1
+
+    def test_trace_records_tool_calls(self, make_response: Any) -> None:
+        messages: list[Message] = [{"role": "user", "content": "test"}]
+
+        responses = [
+            make_response(
+                tool_calls=[
+                    {
+                        "id": "call_1",
+                        "function": {
+                            "name": "calculator",
+                            "arguments": '{"expression": "2 + 2"}',
+                        },
+                    }
+                ]
+            ),
+            make_response(content="The answer is 4."),
+        ]
+        response_iter = iter(responses)
+
+        def fake_completion(**kwargs: Any) -> Any:
+            return next(response_iter)
+
+        agent_run = run_agent_loop(
+            model="test-model",
+            messages=messages,
+            tools=TOOL_DEFINITIONS,
+            completion=fake_completion,
+        )
+        list(agent_run)
+
+        assert len(agent_run.trace.tool_calls) == 1
+        assert agent_run.trace.tool_calls[0]["name"] == "calculator"
+        assert "result" in agent_run.trace.tool_calls[0]

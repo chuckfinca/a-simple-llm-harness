@@ -14,7 +14,6 @@ from llm_harness.display import (
     print_header,
 )
 from llm_harness.prompt import build_system_prompt
-from llm_harness.telemetry import JsonlLogger
 from llm_harness.tools import TOOL_DEFINITIONS
 from llm_harness.types import Message
 
@@ -46,8 +45,6 @@ def main() -> None:
         workspace=workspace,
     )
 
-    litellm.callbacks = [JsonlLogger()]
-
     messages: list[Message] = [{"role": "system", "content": system_prompt}]
 
     print_header(model)
@@ -67,13 +64,14 @@ def main() -> None:
         messages.append({"role": "user", "content": user_input})
 
         try:
-            for event in run_agent_loop(
+            agent_run = run_agent_loop(
                 model=model,
                 messages=messages,
                 tools=TOOL_DEFINITIONS,
                 completion=litellm.completion,
                 workspace=workspace,
-            ):
+            )
+            for event in agent_run:
                 display_event(event)
         except Exception as exc:
             messages.pop()

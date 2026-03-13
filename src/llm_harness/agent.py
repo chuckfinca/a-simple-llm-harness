@@ -5,6 +5,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
+from llm_harness.telemetry import AgentRun, Trace, Turn
 from llm_harness.tools import execute_tool
 from llm_harness.types import (
     AgentEvent,
@@ -48,7 +49,7 @@ def _extract_cost(response: Any) -> float | None:
     return float(cost) if cost is not None else None
 
 
-def run_agent_loop(
+def _run_loop(
     *,
     model: str,
     messages: list[Message],
@@ -56,38 +57,36 @@ def run_agent_loop(
     completion: CompletionFunc,
     workspace: Path | None = None,
     max_turns: int = 20,
+    trace: Trace,
 ) -> Generator[AgentEvent, None, None]:
-    total_prompt_tokens = 0
-    total_completion_tokens = 0
-    total_latency = 0.0
-    total_cost: float | None = 0.0
-
     for _ in range(max_turns):
         start = time.monotonic()
         response = completion(model=model, messages=messages, tools=tools)
         elapsed = time.monotonic() - start
 
         prompt_tokens, completion_tokens = _extract_usage(response)
-        total_prompt_tokens += prompt_tokens
-        total_completion_tokens += completion_tokens
-        total_latency += elapsed
-
         cost = _extract_cost(response)
-        if cost is not None and total_cost is not None:
-            total_cost += cost
-        else:
-            total_cost = None
+
+        trace.turns.append(
+            Turn(
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                latency_s=round(elapsed, 2),
+                cost=cost,
+            )
+        )
 
         assistant_msg = _parse_response_message(response)
         messages.append(assistant_msg)
 
         if not assistant_msg.get("tool_calls"):
+            trace.answer = assistant_msg.get("content")
             yield ResponseEvent(
-                content=assistant_msg.get("content"),
-                prompt_tokens=total_prompt_tokens,
-                completion_tokens=total_completion_tokens,
-                latency_s=round(total_latency, 2),
-                cost=total_cost,
+                content=trace.answer,
+                prompt_tokens=trace.prompt_tokens,
+                completion_tokens=trace.completion_tokens,
+                latency_s=trace.latency_s,
+                cost=trace.cost,
             )
             return
 
@@ -102,6 +101,14 @@ def run_agent_loop(
             )
             yield ToolResultEvent(name=tool_function["name"], result=result)
 
+            trace.tool_calls.append(
+                {
+                    "name": tool_function["name"],
+                    "arguments": tool_function["arguments"],
+                    "result": result,
+                }
+            )
+
             messages.append(
                 {
                     "role": "tool",
@@ -112,8 +119,30 @@ def run_agent_loop(
 
     yield ResponseEvent(
         content=None,
-        prompt_tokens=total_prompt_tokens,
-        completion_tokens=total_completion_tokens,
-        latency_s=round(total_latency, 2),
-        cost=total_cost,
+        prompt_tokens=trace.prompt_tokens,
+        completion_tokens=trace.completion_tokens,
+        latency_s=trace.latency_s,
+        cost=trace.cost,
     )
+
+
+def run_agent_loop(
+    *,
+    model: str,
+    messages: list[Message],
+    tools: list[ToolDef],
+    completion: CompletionFunc,
+    workspace: Path | None = None,
+    max_turns: int = 20,
+) -> AgentRun:
+    trace = Trace(model=model, messages=messages)
+    events = _run_loop(
+        model=model,
+        messages=messages,
+        tools=tools,
+        completion=completion,
+        workspace=workspace,
+        max_turns=max_turns,
+        trace=trace,
+    )
+    return AgentRun(events=events, trace=trace)

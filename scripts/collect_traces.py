@@ -26,13 +26,9 @@ from dotenv import load_dotenv
 
 from llm_harness.agent import run_agent_loop
 from llm_harness.prompt import build_system_prompt
+from llm_harness.telemetry import Trace
 from llm_harness.tools import TOOL_DEFINITIONS
-from llm_harness.types import (
-    Message,
-    ResponseEvent,
-    ToolCallEvent,
-    ToolResultEvent,
-)
+from llm_harness.types import Message
 
 load_dotenv()
 
@@ -142,51 +138,47 @@ QUESTIONS: dict[str, list[Question]] = {
 }
 
 
+@dataclass
+class EvalResult:
+    workspace: str
+    question: str
+    category: str
+    trace: Trace
+    assertions: dict[str, bool] = field(default_factory=dict)
+    passed: bool = False
+
+
 def slugify(text: str) -> str:
     slug = text.lower().strip()
     slug = re.sub(r"[^a-z0-9]+", "-", slug)
     return slug.strip("-")[:60]
 
 
-@dataclass
-class Trace:
-    workspace: str
-    question: str
-    category: str = ""
-    answer: str | None = None
-    tool_calls: list[dict] = field(default_factory=list)
-    latency_s: float | None = None
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    cost: float | None = None
-    error: str | None = None
-    assertions: dict[str, bool] = field(default_factory=dict)
-    passed: bool = False
-
-
-def check_assertions(trace: Trace, question: Question) -> None:
-    answer = (trace.answer or "").lower()
-    tool_count = len(trace.tool_calls)
+def check_assertions(result: EvalResult, question: Question) -> None:
+    answer = (result.trace.answer or "").lower()
+    tool_count = len(result.trace.tool_calls)
 
     if question.must_contain:
         for term in question.must_contain:
-            trace.assertions[f"contains '{term}'"] = term.lower() in answer
+            result.assertions[f"contains '{term}'"] = term.lower() in answer
 
     if question.must_contain_any:
         found = any(term.lower() in answer for term in question.must_contain_any)
-        trace.assertions[f"contains_any {question.must_contain_any}"] = found
+        result.assertions[f"contains_any {question.must_contain_any}"] = found
 
     if question.must_not_contain:
         for term in question.must_not_contain:
-            trace.assertions[f"not contains '{term}'"] = term.lower() not in answer
+            result.assertions[f"not contains '{term}'"] = term.lower() not in answer
 
-    trace.assertions[f"min_tool_calls >= {question.min_tool_calls}"] = (
+    result.assertions[f"min_tool_calls >= {question.min_tool_calls}"] = (
         tool_count >= question.min_tool_calls
     )
 
-    trace.assertions["has_answer"] = trace.answer is not None and trace.error is None
+    result.assertions["has_answer"] = (
+        result.trace.answer is not None and result.trace.error is None
+    )
 
-    trace.passed = all(trace.assertions.values())
+    result.passed = all(result.assertions.values())
 
 
 def _parse_tool_result(
@@ -216,7 +208,15 @@ def _parse_tool_result(
     return count, count > 0, None
 
 
-def run_question(model: str, workspace_name: str, question: Question) -> Trace:
+def _enrich_tool_calls(trace: Trace) -> None:
+    for tool_call in trace.tool_calls:
+        result_count, hit, error = _parse_tool_result(
+            tool_call["name"], tool_call.get("result", "")
+        )
+        tool_call.update({"result_count": result_count, "hit": hit, "error": error})
+
+
+def run_question(model: str, workspace_name: str, question: Question) -> EvalResult:
     workspace = (Path(__file__).parent.parent / "test-data" / workspace_name).resolve()
 
     system_prompt = build_system_prompt(
@@ -229,51 +229,39 @@ def run_question(model: str, workspace_name: str, question: Question) -> Trace:
         {"role": "user", "content": question.text},
     ]
 
-    trace = Trace(
-        workspace=workspace_name,
-        question=question.text,
-        category=question.category,
+    agent_run = run_agent_loop(
+        model=model,
+        messages=messages,
+        tools=TOOL_DEFINITIONS,
+        completion=litellm.completion,
+        workspace=workspace,
     )
 
     try:
-        for event in run_agent_loop(
-            model=model,
-            messages=messages,
-            tools=TOOL_DEFINITIONS,
-            completion=litellm.completion,
-            workspace=workspace,
-        ):
-            if isinstance(event, ToolCallEvent):
-                trace.tool_calls.append(
-                    {"name": event.name, "arguments": event.arguments}
-                )
-            elif isinstance(event, ToolResultEvent):
-                result_count, hit, error = _parse_tool_result(
-                    event.name, event.result
-                )
-                trace.tool_calls[-1].update(
-                    {"result_count": result_count, "hit": hit, "error": error}
-                )
-            elif isinstance(event, ResponseEvent):
-                trace.answer = event.content
-                trace.latency_s = event.latency_s
-                trace.prompt_tokens = event.prompt_tokens
-                trace.completion_tokens = event.completion_tokens
-                trace.cost = event.cost
+        for _ in agent_run:
+            pass
     except Exception as exc:
-        trace.error = str(exc)
+        agent_run.trace.error = str(exc)
 
-    check_assertions(trace, question)
-    return trace
+    _enrich_tool_calls(agent_run.trace)
+
+    result = EvalResult(
+        workspace=workspace_name,
+        question=question.text,
+        category=question.category,
+        trace=agent_run.trace,
+    )
+    check_assertions(result, question)
+    return result
 
 
 def _run_all(model: str, jobs: list[tuple[str, Question]], workers: int):
-    """Yield (workspace_name, question, trace, elapsed) for each completed job."""
+    """Yield (workspace_name, question, result, elapsed) for each completed job."""
     if workers <= 1:
         for workspace_name, question in jobs:
             start = time.monotonic()
-            trace = run_question(model, workspace_name, question)
-            yield workspace_name, question, trace, time.monotonic() - start
+            result = run_question(model, workspace_name, question)
+            yield workspace_name, question, result, time.monotonic() - start
     else:
         print(f"Running {len(jobs)} questions with {workers} workers\n", flush=True)
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -314,23 +302,23 @@ def main() -> None:
     passed = 0
     failed = 0
     start_all = time.monotonic()
-    results: list[Trace] = []
+    results: list[EvalResult] = []
     wall_times: dict[str, float] = {}
 
-    for completed, (workspace_name, question, trace, elapsed) in enumerate(
+    for completed, (workspace_name, question, result, elapsed) in enumerate(
         _run_all(model, jobs, args.workers), 1
     ):
         print(
             f"[{completed}/{total}] {workspace_name}: {question.text[:60]}...",
             flush=True,
         )
-        results.append(trace)
-        wall_times[slugify(trace.question)] = elapsed
-        if trace.passed:
+        results.append(result)
+        wall_times[slugify(result.question)] = elapsed
+        if result.passed:
             passed += 1
         else:
             failed += 1
-        _save_and_report(trace, traces_dir, elapsed)
+        _save_and_report(result, traces_dir, elapsed)
 
     total_elapsed = time.monotonic() - start_all
     print(f"\nTraces saved to {traces_dir} ({total_elapsed:.1f}s total)")
@@ -338,10 +326,10 @@ def main() -> None:
 
     if failed > 0:
         print("\nFailed assertions:")
-        for trace in results:
-            if not trace.passed:
-                print(f"  {trace.workspace}: {trace.question[:60]}")
-                for name, ok in trace.assertions.items():
+        for result in results:
+            if not result.passed:
+                print(f"  {result.workspace}: {result.question[:60]}")
+                for name, ok in result.assertions.items():
                     if not ok:
                         print(f"    FAIL: {name}")
 
@@ -378,10 +366,10 @@ CSV_COLUMNS = [
 ]
 
 
-def _extract_instruction_metrics(trace: Trace) -> dict[str, object]:
-    answer = trace.answer or ""
+def _extract_instruction_metrics(result: EvalResult) -> dict[str, object]:
+    answer = result.trace.answer or ""
 
-    used_tools = len(trace.tool_calls) > 0
+    used_tools = len(result.trace.tool_calls) > 0
 
     citations = re.findall(r"\[\d+\]", answer)
     has_citations = len(citations) > 0
@@ -390,7 +378,7 @@ def _extract_instruction_metrics(trace: Trace) -> dict[str, object]:
     has_sources_section = bool(re.search(r"(?i)\bsources?\s*:", answer))
 
     files_read = set()
-    for tool_call in trace.tool_calls:
+    for tool_call in result.trace.tool_calls:
         try:
             arguments = json.loads(tool_call["arguments"])
         except (json.JSONDecodeError, KeyError):
@@ -408,7 +396,7 @@ def _extract_instruction_metrics(trace: Trace) -> dict[str, object]:
     }
     tool_sequence = "→".join(
         tool_abbreviations.get(tool_call["name"], "?")
-        for tool_call in trace.tool_calls
+        for tool_call in result.trace.tool_calls
     )
 
     return {
@@ -422,7 +410,7 @@ def _extract_instruction_metrics(trace: Trace) -> dict[str, object]:
 
 
 def _append_csv(
-    results: list[Trace],
+    results: list[EvalResult],
     model: str,
     wall_times: dict[str, float],
 ) -> None:
@@ -436,22 +424,23 @@ def _append_csv(
         if not file_exists:
             writer.writeheader()
 
-        for trace in results:
-            prompt_tokens = trace.prompt_tokens or 0
-            completion_tokens = trace.completion_tokens or 0
+        for result in results:
+            trace = result.trace
+            prompt_tokens = trace.prompt_tokens
+            completion_tokens = trace.completion_tokens
             failed_assertions = [
-                name for name, ok in trace.assertions.items() if not ok
+                name for name, ok in result.assertions.items() if not ok
             ]
-            metrics = _extract_instruction_metrics(trace)
+            metrics = _extract_instruction_metrics(result)
             writer.writerow(
                 {
                     "timestamp": timestamp,
                     "model": model,
-                    "trace_id": f"{trace.workspace}/{slugify(trace.question)}",
-                    "workspace": trace.workspace,
-                    "category": trace.category,
-                    "question": trace.question,
-                    "passed": trace.passed,
+                    "trace_id": f"{result.workspace}/{slugify(result.question)}",
+                    "workspace": result.workspace,
+                    "category": result.category,
+                    "question": result.question,
+                    "passed": result.passed,
                     **metrics,
                     "tool_calls": len(trace.tool_calls),
                     "prompt_tokens": prompt_tokens,
@@ -460,7 +449,7 @@ def _append_csv(
                     "cost_usd": f"{trace.cost:.6f}" if trace.cost else "",
                     "latency_s": trace.latency_s,
                     "wall_time_s": round(
-                        wall_times.get(slugify(trace.question), 0), 1
+                        wall_times.get(slugify(result.question), 0), 1
                     ),
                     "failed_assertions": (
                         "; ".join(failed_assertions) if failed_assertions else ""
@@ -485,7 +474,7 @@ TOOL_CALL_COLUMNS = [
 ]
 
 
-def _append_tool_calls_csv(results: list[Trace], model: str) -> None:
+def _append_tool_calls_csv(results: list[EvalResult], model: str) -> None:
     csv_path = Path(__file__).parent.parent / "traces" / "tool_calls.csv"
     file_exists = csv_path.exists()
     timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
@@ -495,9 +484,9 @@ def _append_tool_calls_csv(results: list[Trace], model: str) -> None:
         if not file_exists:
             writer.writeheader()
 
-        for trace in results:
-            trace_id = f"{trace.workspace}/{slugify(trace.question)}"
-            for step, tool_call in enumerate(trace.tool_calls):
+        for result in results:
+            trace_id = f"{result.workspace}/{slugify(result.question)}"
+            for step, tool_call in enumerate(result.trace.tool_calls):
                 writer.writerow(
                     {
                         "timestamp": timestamp,
@@ -515,21 +504,22 @@ def _append_tool_calls_csv(results: list[Trace], model: str) -> None:
     print(f"Tool calls appended to {csv_path}", flush=True)
 
 
-def _save_and_report(trace: Trace, traces_dir: Path, elapsed: float) -> None:
-    out_file = traces_dir / trace.workspace / f"{slugify(trace.question)}.json"
-    out_file.write_text(json.dumps(asdict(trace), indent=2, default=str))
+def _save_and_report(result: EvalResult, traces_dir: Path, elapsed: float) -> None:
+    out_file = traces_dir / result.workspace / f"{slugify(result.question)}.json"
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    out_file.write_text(json.dumps(asdict(result), indent=2, default=str))
 
-    status = "PASS" if trace.passed else "FAIL"
-    tools_used = len(trace.tool_calls)
+    status = "PASS" if result.passed else "FAIL"
+    tools_used = len(result.trace.tool_calls)
     print(f"  {status} | {tools_used} tool calls | {elapsed:.1f}s", flush=True)
 
-    if not trace.passed:
-        for name, ok in trace.assertions.items():
+    if not result.passed:
+        for name, ok in result.assertions.items():
             if not ok:
                 print(f"    FAIL: {name}", flush=True)
 
-    if trace.error:
-        print(f"    ERROR: {trace.error}", flush=True)
+    if result.trace.error:
+        print(f"    ERROR: {result.trace.error}", flush=True)
 
 
 if __name__ == "__main__":
