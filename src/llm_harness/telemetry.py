@@ -22,6 +22,7 @@ class Turn:
 class Trace:
     model: str
     messages: list[Any] = field(default_factory=list)
+    tools: list[dict[str, Any]] = field(default_factory=list)
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     turns: list[Turn] = field(default_factory=list)
     answer: str | None = None

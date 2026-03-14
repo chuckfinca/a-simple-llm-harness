@@ -135,7 +135,7 @@ def run_agent_loop(
     workspace: Path | None = None,
     max_turns: int = 20,
 ) -> AgentRun:
-    trace = Trace(model=model, messages=messages)
+    trace = Trace(model=model, messages=messages, tools=tools)
     events = _run_loop(
         model=model,
         messages=messages,
