@@ -58,10 +58,13 @@ def _run_loop(
     workspace: Path | None = None,
     max_turns: int = 20,
     trace: Trace,
+    completion_kwargs: dict[str, Any],
 ) -> Generator[AgentEvent, None, None]:
     for _ in range(max_turns):
         start = time.monotonic()
-        response = completion(model=model, messages=messages, tools=tools)
+        response = completion(
+            model=model, messages=messages, tools=tools, **completion_kwargs
+        )
         elapsed = time.monotonic() - start
 
         prompt_tokens, completion_tokens = _extract_usage(response)
@@ -134,8 +137,11 @@ def run_agent_loop(
     completion: CompletionFunc,
     workspace: Path | None = None,
     max_turns: int = 20,
+    **completion_kwargs: Any,
 ) -> AgentRun:
-    trace = Trace(model=model, messages=messages, tools=tools)
+    trace = Trace(
+        model=model, messages=messages, tools=tools, completion_kwargs=completion_kwargs
+    )
     events = _run_loop(
         model=model,
         messages=messages,
@@ -144,5 +150,6 @@ def run_agent_loop(
         workspace=workspace,
         max_turns=max_turns,
         trace=trace,
+        completion_kwargs=completion_kwargs,
     )
     return AgentRun(events=events, trace=trace)

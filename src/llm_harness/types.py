@@ -35,6 +35,7 @@ class CompletionFunc(Protocol):
         model: str,
         messages: list[Message],
         tools: list[ToolDef],
+        **kwargs: Any,
     ) -> Any: ...
 
 
