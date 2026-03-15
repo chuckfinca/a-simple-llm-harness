@@ -89,7 +89,6 @@ def run_python(
     timeout: int = TIMEOUT_SECONDS,
 ) -> str:
     ensure_sandbox_image()
-    files_module = Path(__file__).parent / "files.py"
 
     with tempfile.TemporaryDirectory() as tmpdir:
         script_path = Path(tmpdir) / "script.py"
@@ -99,7 +98,6 @@ def run_python(
             (str(script_path), "/home/sandbox/script.py"),
         ]
         if workspace is not None:
-            volumes.append((str(files_module), "/home/sandbox/tools.py"))
             volumes.append((str(workspace), "/workspace"))
 
         try:

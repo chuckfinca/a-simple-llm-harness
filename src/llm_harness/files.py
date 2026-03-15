@@ -205,16 +205,16 @@ def search_files(pattern: str, *, glob: str = "*.md,*.txt", whole_words: bool = 
     return _search_files(WORKSPACE, pattern, glob=glob, whole_words=whole_words)
 
 
-def help() -> str:  # noqa: A001 — intentionally shadows builtin for model discoverability
-    """List available workspace functions and installed Python packages."""
+def available_functions() -> str:
+    """List available workspace functions, their signatures, and installed packages."""
     functions = [
-        ("list_files(path, *, pattern)", "List files in workspace. Filter by regex pattern."),
-        ("read_file(path, *, offset, limit)", "Read file content. Paginate with offset/limit."),
-        ("search_files(pattern, *, glob, whole_words)", "Search file contents with regex. Use | for variants."),
-        ("help()", "Show this help message."),
+        ("list_files(path='.', *, pattern='')", "List files in workspace. Filter by regex pattern."),
+        ("read_file(path, *, offset=0, limit=None)", "Read file content. offset and limit are in lines, not characters."),
+        ("search_files(pattern, *, glob='*.md,*.txt', whole_words=True)", "Search file contents with regex. Use | for variants."),
+        ("available_functions()", "Show this message."),
     ]
 
-    lines = ["Available functions (from tools import list_files, read_file, search_files, help):", ""]
+    lines = ["Available functions (from tools import list_files, read_file, search_files):", ""]
     for sig, desc in functions:
         lines.append(f"  {sig}")
         lines.append(f"    {desc}")

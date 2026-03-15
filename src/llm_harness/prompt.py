@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-PROMPTS_DIR = Path(__file__).parent / "prompts"
+SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "system.md"
 
 
 def build_system_prompt(
@@ -10,15 +10,9 @@ def build_system_prompt(
     base_prompt: str,
     workspace: Path | None = None,
 ) -> str:
-    sections = [base_prompt]
+    if not workspace:
+        return base_prompt
 
-    if workspace:
-        file_count = sum(1 for p in workspace.rglob("*") if p.is_file())
-        sections.append(_load_prompt("goal").format(file_count=file_count))
-        sections.append(_load_prompt("methodology"))
-
-    return "\n\n".join(sections)
-
-
-def _load_prompt(name: str) -> str:
-    return (PROMPTS_DIR / f"{name}.md").read_text().strip()
+    file_count = sum(1 for p in workspace.rglob("*") if p.is_file())
+    system = SYSTEM_PROMPT_PATH.read_text().strip().format(file_count=file_count)
+    return f"{base_prompt}\n\n{system}"

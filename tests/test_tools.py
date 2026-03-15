@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import tempfile
+from pathlib import Path
 
 from llm_harness.tools import TOOL_DEFINITIONS, execute_tool
 
@@ -14,7 +16,6 @@ class TestToolDefinitions:
         assert fn["name"] == "run_python"
         assert "description" in fn
         assert "parameters" in fn
-        assert "from tools import" in fn["description"]
 
 
 class TestRunPython:
@@ -35,20 +36,15 @@ class TestRunPython:
         assert result["exit_code"] == 0
         assert "6" in result["stdout"]
 
-    def test_tools_importable_with_workspace(self) -> None:
-        """When workspace is provided, `from tools import ...` works inside sandbox."""
-        import tempfile
-        from pathlib import Path
-
+    def test_workspace_mounted(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             workspace = Path(tmpdir)
             (workspace / "test.txt").write_text("hello world\n")
 
             code = (
-                "from tools import list_files\n"
-                "import json\n"
-                "result = json.loads(list_files('.'))\n"
-                "print(result['count'])\n"
+                "from pathlib import Path\n"
+                "files = list(Path('/workspace').iterdir())\n"
+                "print(len(files))\n"
             )
             result = json.loads(
                 execute_tool(
@@ -59,26 +55,6 @@ class TestRunPython:
             )
             assert result["exit_code"] == 0
             assert "1" in result["stdout"]
-
-    def test_sub_call_traces_in_stderr(self) -> None:
-        """Tool function calls emit __TOOL_CALL__ lines to stderr."""
-        import tempfile
-        from pathlib import Path
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            workspace = Path(tmpdir)
-            (workspace / "test.txt").write_text("hello\n")
-
-            code = "from tools import list_files; list_files('.')"
-            result = json.loads(
-                execute_tool(
-                    "run_python",
-                    json.dumps({"code": code}),
-                    workspace=workspace,
-                )
-            )
-            assert result["exit_code"] == 0
-            assert "__TOOL_CALL__:" in result["stderr"]
 
 
 class TestExecuteTool:

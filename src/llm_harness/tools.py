@@ -11,12 +11,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "run_python",
-            "description": (
-                "Execute Python code in a sandboxed container. "
-                "Use `from tools import list_files, read_file, search_files, help` "
-                "to work with workspace files. Call help() to see function signatures "
-                "and available packages (numpy, pandas, scipy)."
-            ),
+            "description": "Execute Python code in a sandboxed container.",
             "parameters": {
                 "type": "object",
                 "properties": {
