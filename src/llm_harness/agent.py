@@ -49,7 +49,6 @@ def _extract_cost(response: Any) -> float | None:
     return float(cost) if cost is not None else None
 
 
-
 def _run_loop(
     *,
     model: str,
