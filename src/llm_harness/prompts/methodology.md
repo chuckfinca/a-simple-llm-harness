@@ -1,28 +1,22 @@
 ## Methodology
 
-Write Python code to find evidence in the workspace files. Import the available functions:
+Write Python code using the workspace functions. Combine multiple operations into a single code block to minimize tool calls.
 
 ```python
-from tools import list_files, search_files, read_file, help
+from tools import list_files, search_files, read_file
+import json
+
+# Do multiple things in one step: search, then read the top results
+results = json.loads(search_files("faction|factions"))
+for match in results["matches"][:3]:
+    content = json.loads(read_file(match["file"]))
+    print(f"=== {match['file']} (line {match['line']}) ===")
+    print(content["content"][:2000])
 ```
 
-Call `help()` to see function signatures and available packages.
+All functions return JSON strings — use `json.loads()` to parse them. Call `help()` to see full signatures.
 
-Search strategy:
-- Extract key nouns from the question. Ignore task words like "discuss" or "analyze."
-- Generate 2-3 search terms per concept: synonyms and morphological variants (e.g., judge/judicial/judiciary). Use `|` for variants in a single search.
-- Start with the most specific term. Broaden only if the first search finds nothing.
-- Stop searching when you are confident you have the passages needed to answer the question. If after a few searches you aren't converging on an answer, stop and report that.
-
-Once you have gathered enough evidence, present the relevant passages with numbered references [1], [2], then use them to synthesize a brief answer.
-
-- Only cite documents you read in this conversation. Never cite from memory.
-- Use the line numbers returned by your tools. Never estimate or guess line numbers.
-- If you cannot find information, say so rather than citing a loosely related passage.
-
-Example:
-  Madison argues that factions arise from the nature of man [1], and that a pure democracy cannot cure the mischiefs of faction [2].
-
-  Sources:
-  [1] federalist-10-the-same-subject-continued.txt, lines 42-58
-  [2] federalist-10-the-same-subject-continued.txt, lines 120-135
+Key points:
+- **Batch operations.** Search and read in the same code block. Never make a separate call just to list or search — combine it with the read that follows.
+- **Use function parameters.** `read_file(path, offset=100, limit=50)` reads 50 lines starting at line 100. `search_files("judge|judicial|judiciary")` searches variants in one call. Don't paginate by slicing strings.
+- **Stop early.** 2-4 productive tool calls should suffice for most questions. If you have the passages you need, answer immediately.

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import collections.abc
 import functools
 import json
 import re
 import sys
-from collections.abc import Callable
 from pathlib import Path
-from typing import TypeVar
 
 MAX_READ_CHARS = 8000
 MAX_SEARCH_RESULTS = 30
@@ -26,16 +25,20 @@ def _resolve_within_workspace(workspace: Path, relative_path: str) -> Path | Non
 # can reconstruct per-function traces from a single run_python call.
 # ---------------------------------------------------------------------------
 
-F = TypeVar("F", bound=Callable[..., str])
+def _log_call[F: collections.abc.Callable[..., str]](fn: F) -> F:
+    import inspect
 
+    sig = inspect.signature(fn)
+    param_names = list(sig.parameters.keys())
 
-def _log_call(fn: F) -> F:
     @functools.wraps(fn)
     def wrapper(*args: object, **kwargs: object) -> str:
         result = fn(*args, **kwargs)
         result_chars = len(result) if isinstance(result, str) else 0
-        entry = {"name": fn.__name__, "args": kwargs or {}, "result_chars": result_chars}
-        print(f"{TRACE_PREFIX}{json.dumps(entry)}", file=sys.stderr)
+        all_args = {param_names[i]: v for i, v in enumerate(args)}
+        all_args.update(kwargs)
+        entry = {"name": fn.__name__, "args": all_args, "result_chars": result_chars}
+        print(f"{TRACE_PREFIX}{json.dumps(entry, default=str)}", file=sys.stderr)
         return result
     return wrapper  # type: ignore[return-value]
 
@@ -220,6 +223,11 @@ def help() -> str:  # noqa: A001 — intentionally shadows builtin for model dis
     lines.append("Installed packages: numpy, pandas, scipy")
     lines.append("")
     lines.append("All functions return JSON strings. Use json.loads() to parse results.")
+    lines.append("")
+    lines.append("Citation format — cite documents with numbered references:")
+    lines.append("  [1] federalist-10.txt, lines 42-58")
+    lines.append("  [2] federalist-10.txt, lines 120-135")
+    lines.append("Only cite documents you read. Use line numbers returned by your tools.")
 
     output = "\n".join(lines)
     print(output)
