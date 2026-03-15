@@ -345,6 +345,7 @@ CSV_COLUMNS = [
     "latency_s",
     "wall_time_s",
     # Diagnostics
+    "stdout_truncations",
     "failed_assertions",
     "error",
 ]
@@ -361,6 +362,12 @@ def _extract_instruction_metrics(result: EvalResult) -> dict[str, object]:
 
     has_sources_section = bool(re.search(r"(?i)\bsources?\s*:", answer))
 
+    stdout_truncations = sum(
+        1
+        for tc in result.trace.tool_calls
+        if "characters omitted" in tc.get("result", "")
+    )
+
     return {
         "used_tools": used_tools,
         "has_citations": has_citations,
@@ -370,6 +377,7 @@ def _extract_instruction_metrics(result: EvalResult) -> dict[str, object]:
         "tool_sequence": "→".join(
             "P" for _ in result.trace.tool_calls
         ),
+        "stdout_truncations": stdout_truncations,
     }
 
 
