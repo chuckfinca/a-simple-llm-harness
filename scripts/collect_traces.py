@@ -154,9 +154,15 @@ def slugify(text: str) -> str:
     return slug.strip("-")[:60]
 
 
+def _count_sub_calls(trace: Trace) -> int:
+    return sum(len(tc.get("sub_calls", [])) for tc in trace.tool_calls)
+
+
 def check_assertions(result: EvalResult, question: Question) -> None:
     answer = (result.trace.answer or "").lower()
-    tool_count = len(result.trace.tool_calls)
+    # Count sub_calls as the meaningful "tool call" count
+    sub_call_count = _count_sub_calls(result.trace)
+    effective_tool_count = sub_call_count if sub_call_count > 0 else len(result.trace.tool_calls)
 
     if question.must_contain:
         for term in question.must_contain:
@@ -171,7 +177,7 @@ def check_assertions(result: EvalResult, question: Question) -> None:
             result.assertions[f"not contains '{term}'"] = term.lower() not in answer
 
     result.assertions[f"min_tool_calls >= {question.min_tool_calls}"] = (
-        tool_count >= question.min_tool_calls
+        effective_tool_count >= question.min_tool_calls
     )
 
     result.assertions["has_answer"] = (
@@ -200,8 +206,6 @@ def _parse_tool_result(
         count = data.get("lines_returned", 0)
     elif tool_name == "run_python":
         count = 1 if data.get("exit_code") == 0 else 0
-    elif tool_name == "calculator":
-        count = 1 if "result" in data else 0
     else:
         count = 1
 
@@ -377,27 +381,40 @@ def _extract_instruction_metrics(result: EvalResult) -> dict[str, object]:
 
     has_sources_section = bool(re.search(r"(?i)\bsources?\s*:", answer))
 
-    files_read = set()
+    # Extract file reads from sub_calls or legacy tool_calls
+    files_read: set[str] = set()
+    all_sub_calls: list[dict[str, object]] = []
     for tool_call in result.trace.tool_calls:
-        try:
-            arguments = json.loads(tool_call["arguments"])
-        except (json.JSONDecodeError, KeyError):
-            continue
-        if tool_call["name"] == "read_file" and "path" in arguments:
-            files_read.add(arguments["path"])
+        sub_calls = tool_call.get("sub_calls", [])
+        if sub_calls:
+            all_sub_calls.extend(sub_calls)
+            for sc in sub_calls:
+                if sc.get("name") == "read_file":
+                    path = sc.get("args", {}).get("path")
+                    if path:
+                        files_read.add(str(path))
+        else:
+            try:
+                arguments = json.loads(tool_call["arguments"])
+            except (json.JSONDecodeError, KeyError):
+                continue
+            if tool_call["name"] == "read_file" and "path" in arguments:
+                files_read.add(arguments["path"])
 
-    tool_abbreviations = {
-        "list_files": "L",
-        "search_files": "S",
-        "read_file": "R",
-        "run_python": "P",
-        "calculator": "C",
-        "get_current_time": "T",
-    }
-    tool_sequence = "→".join(
-        tool_abbreviations.get(tool_call["name"], "?")
-        for tool_call in result.trace.tool_calls
-    )
+    # Build tool_sequence from sub_calls if available, else from tool_calls
+    sub_call_abbreviations = {"list_files": "L", "search_files": "S", "read_file": "R"}
+    tool_abbreviations = {**sub_call_abbreviations, "run_python": "P"}
+
+    if all_sub_calls:
+        tool_sequence = "→".join(
+            sub_call_abbreviations.get(str(sc.get("name", "")), "?")
+            for sc in all_sub_calls
+        )
+    else:
+        tool_sequence = "→".join(
+            tool_abbreviations.get(tool_call["name"], "?")
+            for tool_call in result.trace.tool_calls
+        )
 
     return {
         "used_tools": used_tools,
@@ -486,20 +503,40 @@ def _append_tool_calls_csv(results: list[EvalResult], model: str) -> None:
 
         for result in results:
             trace_id = f"{result.workspace}/{slugify(result.question)}"
-            for step, tool_call in enumerate(result.trace.tool_calls):
-                writer.writerow(
-                    {
-                        "timestamp": timestamp,
-                        "model": model,
-                        "trace_id": trace_id,
-                        "step": step,
-                        "tool": tool_call["name"],
-                        "arguments": tool_call["arguments"],
-                        "result_count": tool_call.get("result_count", ""),
-                        "hit": tool_call.get("hit", ""),
-                        "error": tool_call.get("error") or "",
-                    }
-                )
+            step = 0
+            for tool_call in result.trace.tool_calls:
+                sub_calls = tool_call.get("sub_calls", [])
+                if sub_calls:
+                    for sc in sub_calls:
+                        writer.writerow(
+                            {
+                                "timestamp": timestamp,
+                                "model": model,
+                                "trace_id": trace_id,
+                                "step": step,
+                                "tool": sc.get("name", "?"),
+                                "arguments": json.dumps(sc.get("args", {})),
+                                "result_count": sc.get("result_chars", ""),
+                                "hit": "",
+                                "error": "",
+                            }
+                        )
+                        step += 1
+                else:
+                    writer.writerow(
+                        {
+                            "timestamp": timestamp,
+                            "model": model,
+                            "trace_id": trace_id,
+                            "step": step,
+                            "tool": tool_call["name"],
+                            "arguments": tool_call["arguments"],
+                            "result_count": tool_call.get("result_count", ""),
+                            "hit": tool_call.get("hit", ""),
+                            "error": tool_call.get("error") or "",
+                        }
+                    )
+                    step += 1
 
     print(f"Tool calls appended to {csv_path}", flush=True)
 

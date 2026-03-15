@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
+from llm_harness.files import TRACE_PREFIX
 from llm_harness.telemetry import AgentRun, Trace, Turn
 from llm_harness.tools import execute_tool
 from llm_harness.types import (
@@ -47,6 +49,24 @@ def _extract_usage(response: Any) -> tuple[int, int]:
 def _extract_cost(response: Any) -> float | None:
     cost = getattr(response, "_hidden_params", {}).get("response_cost")
     return float(cost) if cost is not None else None
+
+
+def _parse_sub_calls(result_json: str) -> list[dict[str, Any]]:
+    """Extract __TOOL_CALL__ entries from the stderr field of a run_python result."""
+    try:
+        data = json.loads(result_json)
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+    stderr = data.get("stderr", "")
+    sub_calls = []
+    for line in stderr.splitlines():
+        if line.startswith(TRACE_PREFIX):
+            try:
+                sub_calls.append(json.loads(line[len(TRACE_PREFIX) :]))
+            except json.JSONDecodeError:
+                continue
+    return sub_calls
 
 
 def _run_loop(
@@ -104,13 +124,16 @@ def _run_loop(
             )
             yield ToolResultEvent(name=tool_function["name"], result=result)
 
-            trace.tool_calls.append(
-                {
-                    "name": tool_function["name"],
-                    "arguments": tool_function["arguments"],
-                    "result": result,
-                }
-            )
+            sub_calls = _parse_sub_calls(result)
+            tool_entry: dict[str, Any] = {
+                "name": tool_function["name"],
+                "arguments": tool_function["arguments"],
+                "result": result,
+            }
+            if sub_calls:
+                tool_entry["sub_calls"] = sub_calls
+
+            trace.tool_calls.append(tool_entry)
 
             messages.append(
                 {

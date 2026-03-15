@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from llm_harness.files import list_files, read_file, search_files
+from llm_harness.files import _list_files as list_files
+from llm_harness.files import _read_file as read_file
+from llm_harness.files import _search_files as search_files
 
 
 def _setup_workspace(tmp_path: Path) -> None:

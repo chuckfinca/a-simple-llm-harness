@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.syntax import Syntax
 
 from llm_harness.types import AgentEvent, ResponseEvent, ToolCallEvent, ToolResultEvent
 
@@ -25,6 +28,14 @@ def print_header(model: str) -> None:
 
 
 def print_tool_call(event: ToolCallEvent) -> None:
+    if event.name == "run_python":
+        try:
+            code = json.loads(event.arguments).get("code", "")
+        except (json.JSONDecodeError, TypeError):
+            code = event.arguments
+        console.print("  [bright_black]\\[tool][/bright_black] [cyan]run_python[/cyan]")
+        console.print(Syntax(code, "python", padding=(0, 4)))
+        return
     args_preview = _truncate(event.arguments, INLINE_TRUNCATE)
     console.print(
         f"  [bright_black]\\[tool][/bright_black] [cyan]{event.name}[/cyan]({args_preview})"

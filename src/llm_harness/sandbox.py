@@ -82,15 +82,29 @@ def _docker_run(
         raise
 
 
-def run_python(code: str, *, timeout: int = TIMEOUT_SECONDS) -> str:
+def run_python(
+    code: str,
+    *,
+    workspace: Path | None = None,
+    timeout: int = TIMEOUT_SECONDS,
+) -> str:
     ensure_sandbox_image()
+    files_module = Path(__file__).parent / "files.py"
+
     with tempfile.TemporaryDirectory() as tmpdir:
         script_path = Path(tmpdir) / "script.py"
         script_path.write_text(code)
 
+        volumes: list[tuple[str, str]] = [
+            (str(script_path), "/home/sandbox/script.py"),
+        ]
+        if workspace is not None:
+            volumes.append((str(files_module), "/home/sandbox/tools.py"))
+            volumes.append((str(workspace), "/workspace"))
+
         try:
             result = _docker_run(
-                volumes=[(str(script_path), "/home/sandbox/script.py")],
+                volumes=volumes,
                 command=["python", "/home/sandbox/script.py"],
                 timeout=timeout,
             )
@@ -112,25 +126,6 @@ def run_python(code: str, *, timeout: int = TIMEOUT_SECONDS) -> str:
                 }
             )
 
-
-def run_file_tool(tool_name: str, arguments: dict[str, object], workspace: Path) -> str:
-    ensure_sandbox_image()
-    files_module = Path(__file__).parent / "files.py"
-    command_json = json.dumps({"fn": tool_name, **arguments})
-
-    try:
-        result = _docker_run(
-            volumes=[
-                (str(files_module), "/home/sandbox/files.py"),
-                (str(workspace), "/workspace"),
-            ],
-            command=["python", "/home/sandbox/files.py", command_json],
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-        return json.dumps({"error": _truncate(result.stderr)})
-    except subprocess.TimeoutExpired:
-        return json.dumps({"error": "File operation timed out."})
 
 
 def _truncate(text: str) -> str:
