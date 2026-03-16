@@ -32,11 +32,6 @@ from llm_harness.types import Message
 
 load_dotenv()
 
-EVAL_PROMPT = (
-    "You are a helpful assistant with access to tools for computation, "
-    "code execution, and file exploration."
-)
-
 
 @dataclass
 class Question:
@@ -240,7 +235,7 @@ def run_question(model: str, workspace_name: str, question: Question) -> EvalRes
     workspace = (Path(__file__).parent.parent / "test-data" / workspace_name).resolve()
 
     system_prompt = build_system_prompt(
-        base_prompt=EVAL_PROMPT,
+        base_prompt="",
         workspace=workspace,
     )
 
@@ -420,19 +415,38 @@ def _extract_instruction_metrics(result: EvalResult) -> dict[str, object]:
     }
 
 
+def _migrate_csv_header(csv_path: Path, columns: list[str]) -> None:
+    """Rewrite a CSV if its header doesn't match the expected columns."""
+    if not csv_path.exists():
+        return
+    with csv_path.open(newline="") as f:
+        reader = csv.reader(f)
+        header = next(reader, None)
+        if header == columns:
+            return
+        rows = list(reader)
+    with csv_path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=columns)
+        writer.writeheader()
+        if header:
+            for row in rows:
+                mapped = dict(zip(header, row, strict=False))
+                writer.writerow({col: mapped.get(col, "") for col in columns})
+
+
 def _append_csv(
     results: list[EvalResult],
     model: str,
     wall_times: dict[str, float],
 ) -> None:
     csv_path = Path(__file__).parent.parent / "traces" / "results.csv"
-    file_exists = csv_path.exists()
+    _migrate_csv_header(csv_path, CSV_COLUMNS)
 
     timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
 
     with csv_path.open("a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
-        if not file_exists:
+        if not csv_path.stat().st_size:
             writer.writeheader()
 
         for result in results:
@@ -492,12 +506,12 @@ TOOL_CALL_COLUMNS = [
 
 def _append_tool_calls_csv(results: list[EvalResult], model: str) -> None:
     csv_path = Path(__file__).parent.parent / "traces" / "tool_calls.csv"
-    file_exists = csv_path.exists()
+    _migrate_csv_header(csv_path, TOOL_CALL_COLUMNS)
     timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
 
     with csv_path.open("a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=TOOL_CALL_COLUMNS)
-        if not file_exists:
+        if not csv_path.stat().st_size:
             writer.writeheader()
 
         for result in results:
