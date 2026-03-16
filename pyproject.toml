@@ -15,6 +15,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "beautifulsoup4>=4.12",
     "jupyter>=1.1.1",
     "mypy>=1.19.1",
     "pandas>=3.0.1",
@@ -51,6 +52,7 @@ max-complexity = 12
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]
+"scripts/prepare_sec_eval.py" = ["S310"]
 "src/llm_harness/sandbox.py" = ["S603", "S607"]
 
 [tool.ruff.format]

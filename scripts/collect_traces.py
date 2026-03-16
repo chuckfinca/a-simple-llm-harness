@@ -116,6 +116,15 @@ QUESTIONS: dict[str, list[Question]] = {
             min_tool_calls=3,
         ),
     ],
+    "sec-10k": [
+        Question(
+            text="Which company in the dataset had the highest total revenue?",
+            category="multi_doc",
+            must_contain=["amazon"],
+            must_contain_any=[],
+            min_tool_calls=3,
+        ),
+    ],
     "world-factbook": [
         Question(
             text="What is the population of Japan?",
@@ -136,6 +145,33 @@ QUESTIONS: dict[str, list[Question]] = {
         ),
     ],
 }
+
+
+def _load_external_questions() -> dict[str, list[Question]]:
+    """Load questions.json from any workspace directory that has one."""
+    external: dict[str, list[Question]] = {}
+    test_data_dir = Path(__file__).parent.parent / "test-data"
+    if not test_data_dir.exists():
+        return external
+    for workspace_dir in sorted(test_data_dir.iterdir()):
+        if not workspace_dir.is_dir() or workspace_dir.name in QUESTIONS:
+            continue
+        questions_file = workspace_dir / "questions.json"
+        if not questions_file.exists():
+            continue
+        raw = json.loads(questions_file.read_text())
+        external[workspace_dir.name] = [
+            Question(
+                text=q["text"],
+                category=q["category"],
+                must_contain=q.get("must_contain", []),
+                must_contain_any=q.get("must_contain_any", []),
+                must_not_contain=q.get("must_not_contain", []),
+                min_tool_calls=q.get("min_tool_calls", 1),
+            )
+            for q in raw
+        ]
+    return external
 
 
 @dataclass
@@ -276,8 +312,10 @@ def main() -> None:
     model_slug = slugify(model)
     traces_dir = Path(__file__).parent.parent / "traces" / model_slug
 
+    all_questions = {**QUESTIONS, **_load_external_questions()}
+
     jobs: list[tuple[str, Question]] = []
-    for workspace_name, questions in QUESTIONS.items():
+    for workspace_name, questions in all_questions.items():
         workspace_dir = traces_dir / workspace_name
         workspace_dir.mkdir(parents=True, exist_ok=True)
         jobs.extend((workspace_name, question) for question in questions)
@@ -343,6 +381,7 @@ CSV_COLUMNS = [
     "total_tokens",
     "cost_usd",
     "latency_s",
+    "avg_turn_latency_s",
     "wall_time_s",
     # Diagnostics
     "stdout_truncations",
@@ -420,6 +459,11 @@ def _append_csv(
                     "total_tokens": prompt_tokens + completion_tokens,
                     "cost_usd": f"{trace.cost:.6f}" if trace.cost else "",
                     "latency_s": trace.latency_s,
+                    "avg_turn_latency_s": round(
+                        trace.latency_s / len(trace.turns), 2
+                    )
+                    if trace.turns
+                    else "",
                     "wall_time_s": round(
                         wall_times.get(slugify(result.question), 0), 1
                     ),
