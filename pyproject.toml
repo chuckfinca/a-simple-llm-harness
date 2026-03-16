@@ -1,5 +1,5 @@
 [project]
-name = "llm-harness"
+name = "a-simple-llm-harness"
 version = "0.1.0"
 description = "Generic LLM agent harness with tool-use support"
 readme = "README.md"
