@@ -28,6 +28,7 @@ class Trace:
     turns: list[Turn] = field(default_factory=list)
     answer: str | None = None
     error: str | None = None
+    wall_time_s: float = 0.0
 
     @property
     def prompt_tokens(self) -> int:

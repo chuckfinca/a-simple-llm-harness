@@ -244,6 +244,7 @@ def run_question(model: str, workspace_name: str, question: Question) -> EvalRes
         {"role": "user", "content": question.text},
     ]
 
+    start = time.monotonic()
     agent_run = run_agent_loop(
         model=model,
         messages=messages,
@@ -258,6 +259,7 @@ def run_question(model: str, workspace_name: str, question: Question) -> EvalRes
     except Exception as exc:
         agent_run.trace.error = str(exc)
 
+    agent_run.trace.wall_time_s = round(time.monotonic() - start, 2)
     _enrich_tool_calls(agent_run.trace)
 
     result = EvalResult(
@@ -271,23 +273,21 @@ def run_question(model: str, workspace_name: str, question: Question) -> EvalRes
 
 
 def _run_all(model: str, jobs: list[tuple[str, Question]], workers: int):
-    """Yield (workspace_name, question, result, elapsed) for each completed job."""
+    """Yield (workspace_name, question, result) for each completed job."""
     if workers <= 1:
         for workspace_name, question in jobs:
-            start = time.monotonic()
             result = run_question(model, workspace_name, question)
-            yield workspace_name, question, result, time.monotonic() - start
+            yield workspace_name, question, result
     else:
         print(f"Running {len(jobs)} questions with {workers} workers\n", flush=True)
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {}
             for workspace_name, question in jobs:
                 future = pool.submit(run_question, model, workspace_name, question)
-                futures[future] = (workspace_name, question, time.monotonic())
+                futures[future] = (workspace_name, question)
             for future in as_completed(futures):
-                workspace_name, question, start = futures[future]
-                elapsed = time.monotonic() - start
-                yield workspace_name, question, future.result(), elapsed
+                workspace_name, question = futures[future]
+                yield workspace_name, question, future.result()
 
 
 def main() -> None:
@@ -320,9 +320,8 @@ def main() -> None:
     failed = 0
     start_all = time.monotonic()
     results: list[EvalResult] = []
-    wall_times: dict[str, float] = {}
 
-    for completed, (workspace_name, question, result, elapsed) in enumerate(
+    for completed, (workspace_name, question, result) in enumerate(
         _run_all(model, jobs, args.workers), 1
     ):
         print(
@@ -330,12 +329,11 @@ def main() -> None:
             flush=True,
         )
         results.append(result)
-        wall_times[slugify(result.question)] = elapsed
         if result.passed:
             passed += 1
         else:
             failed += 1
-        _save_and_report(result, traces_dir, elapsed)
+        _save_and_report(result, traces_dir)
 
     total_elapsed = time.monotonic() - start_all
     print(f"\nTraces saved to {traces_dir} ({total_elapsed:.1f}s total)")
@@ -350,7 +348,7 @@ def main() -> None:
                     if not ok:
                         print(f"    FAIL: {name}")
 
-    _append_csv(results, model, wall_times)
+    _append_csv(results, model)
     _append_tool_calls_csv(results, model)
 
 
@@ -375,7 +373,8 @@ CSV_COLUMNS = [
     "completion_tokens",
     "total_tokens",
     "cost_usd",
-    "latency_s",
+    "model_time_s",
+    "tool_time_s",
     "avg_turn_latency_s",
     "wall_time_s",
     # Diagnostics
@@ -437,7 +436,6 @@ def _migrate_csv_header(csv_path: Path, columns: list[str]) -> None:
 def _append_csv(
     results: list[EvalResult],
     model: str,
-    wall_times: dict[str, float],
 ) -> None:
     csv_path = Path(__file__).parent.parent / "traces" / "results.csv"
     _migrate_csv_header(csv_path, CSV_COLUMNS)
@@ -472,15 +470,18 @@ def _append_csv(
                     "completion_tokens": completion_tokens,
                     "total_tokens": prompt_tokens + completion_tokens,
                     "cost_usd": f"{trace.cost:.6f}" if trace.cost else "",
-                    "latency_s": trace.latency_s,
+                    "model_time_s": trace.latency_s,
+                    "tool_time_s": round(
+                        trace.wall_time_s - trace.latency_s, 2
+                    )
+                    if trace.wall_time_s
+                    else "",
                     "avg_turn_latency_s": round(
                         trace.latency_s / len(trace.turns), 2
                     )
                     if trace.turns
                     else "",
-                    "wall_time_s": round(
-                        wall_times.get(slugify(result.question), 0), 1
-                    ),
+                    "wall_time_s": trace.wall_time_s,
                     "failed_assertions": (
                         "; ".join(failed_assertions) if failed_assertions else ""
                     ),
@@ -534,14 +535,20 @@ def _append_tool_calls_csv(results: list[EvalResult], model: str) -> None:
     print(f"Tool calls appended to {csv_path}", flush=True)
 
 
-def _save_and_report(result: EvalResult, traces_dir: Path, elapsed: float) -> None:
+def _save_and_report(result: EvalResult, traces_dir: Path) -> None:
     out_file = traces_dir / result.workspace / f"{slugify(result.question)}.json"
     out_file.parent.mkdir(parents=True, exist_ok=True)
     out_file.write_text(json.dumps(asdict(result), indent=2, default=str))
 
+    trace = result.trace
     status = "PASS" if result.passed else "FAIL"
-    tools_used = len(result.trace.tool_calls)
-    print(f"  {status} | {tools_used} tool calls | {elapsed:.1f}s", flush=True)
+    model_s = trace.latency_s
+    tool_s = round(trace.wall_time_s - model_s, 1)
+    print(
+        f"  {status} | {len(trace.tool_calls)} tool calls | "
+        f"{trace.wall_time_s:.1f}s (model {model_s}s, tools {tool_s}s)",
+        flush=True,
+    )
 
     if not result.passed:
         for name, ok in result.assertions.items():
