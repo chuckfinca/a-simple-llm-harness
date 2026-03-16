@@ -64,7 +64,11 @@ def _run_loop(
     for _ in range(max_turns):
         start = time.monotonic()
         response = completion(
-            model=model, messages=messages, tools=tools, **completion_kwargs
+            model=model,
+            messages=messages,
+            tools=tools,
+            num_retries=2,
+            **completion_kwargs,
         )
         elapsed = time.monotonic() - start
 

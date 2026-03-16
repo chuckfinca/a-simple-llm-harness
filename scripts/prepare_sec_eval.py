@@ -123,8 +123,17 @@ def find_latest_10k(cik: str) -> tuple[str, str, str] | None:
     return None
 
 
+def _strip_xbrl_noise(soup: BeautifulSoup) -> None:
+    """Remove iXBRL metadata elements that pollute get_text() output."""
+    for tag_name in ("ix:hidden", "ix:header"):
+        for el in soup.find_all(tag_name):
+            el.decompose()
+    for el in soup.find_all(style=lambda v: v and "display:none" in v):
+        el.decompose()
+
+
 def download_filing_text(cik: str, accession: str, primary_doc: str) -> str:
-    """Download filing HTML and extract plain text."""
+    """Download filing HTML and extract readable plain text."""
     cik_num = str(int(cik))
     accession_flat = accession.replace("-", "")
     url = (
@@ -133,6 +142,7 @@ def download_filing_text(cik: str, accession: str, primary_doc: str) -> str:
     )
     html = _fetch_bytes(url)
     soup = BeautifulSoup(html, "html.parser")
+    _strip_xbrl_noise(soup)
     return soup.get_text(separator="\n", strip=True)
 
 

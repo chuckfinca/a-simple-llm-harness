@@ -26,6 +26,34 @@ def _collapsible(
     )
 
 
+def _format_tool_result(text: str, max_chars: int | None = None) -> str:
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return _truncate(text, max_chars)
+
+    if not isinstance(data, dict) or "stdout" not in data:
+        return _truncate(_format_json(text), max_chars)
+
+    parts = []
+    if data.get("stdout", "").strip():
+        parts.append(data["stdout"].strip())
+    if data.get("stderr", "").strip():
+        parts.append(f"[stderr]\n{data['stderr'].strip()}")
+    exit_code = data.get("exit_code")
+    if exit_code and exit_code != 0:
+        parts.append(f"exit_code={exit_code}")
+
+    result = "\n\n".join(parts) if parts else "(no output)"
+    return _truncate(result, max_chars)
+
+
+def _truncate(text: str, max_chars: int | None = None) -> str:
+    if max_chars is not None and len(text) > max_chars:
+        return text[:max_chars] + f"\n... ({len(text) - max_chars} more chars)"
+    return text
+
+
 def _tool_result_summary(text: str) -> str:
     try:
         data = json.loads(text)
@@ -180,12 +208,7 @@ def _render_message(
 
     if role == "tool":
         summary = _tool_result_summary(content)
-        formatted = _format_json(content)
-        if max_chars is not None and len(formatted) > max_chars:
-            formatted = (
-                formatted[:max_chars]
-                + f"\n... ({len(formatted) - max_chars} more chars)"
-            )
+        formatted = _format_tool_result(content, max_chars)
         return _collapsible(
             f"<span style='color:#986;'>[tool result]</span>"
             f" {escape(summary)}",

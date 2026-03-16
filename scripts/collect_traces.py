@@ -113,10 +113,44 @@ QUESTIONS: dict[str, list[Question]] = {
     ],
     "sec-10k": [
         Question(
+            text="What was Amazon's net income in fiscal year 2025?",
+            category="single_fact",
+            must_contain=["amazon"],
+            must_contain_any=[
+                "77,670,000,000",
+                "77.7 billion",
+                "77.7B",
+                "78 billion",
+                "77,670 million",
+                "77,670",
+            ],
+            min_tool_calls=1,
+        ),
+        Question(
+            text=(
+                "Which company had higher total revenue in fiscal year 2025,"
+                " JPMorgan Chase or UnitedHealth Group?"
+            ),
+            category="comparison",
+            must_contain=["unitedhealth group"],
+            min_tool_calls=2,
+        ),
+        Question(
             text="Which company in the dataset had the highest total revenue?",
             category="multi_doc",
             must_contain=["amazon"],
-            must_contain_any=[],
+            min_tool_calls=3,
+        ),
+        Question(
+            text="Which company in the dataset had the highest net income?",
+            category="multi_doc",
+            must_contain=["alphabet"],
+            min_tool_calls=3,
+        ),
+        Question(
+            text="Which company in the dataset had the highest total assets?",
+            category="multi_doc",
+            must_contain=["jpmorgan chase"],
             min_tool_calls=3,
         ),
     ],
@@ -295,6 +329,11 @@ def main() -> None:
     parser.add_argument(
         "--workers", type=int, default=1, help="Number of parallel workers (default: 1)"
     )
+    parser.add_argument(
+        "--filter",
+        nargs="+",
+        help="Only run questions whose slug contains one of these substrings",
+    )
     args = parser.parse_args()
 
     litellm.suppress_debug_info = True
@@ -314,6 +353,14 @@ def main() -> None:
         workspace_dir = traces_dir / workspace_name
         workspace_dir.mkdir(parents=True, exist_ok=True)
         jobs.extend((workspace_name, question) for question in questions)
+
+    if args.filter:
+        jobs = [
+            (ws, q)
+            for ws, q in jobs
+            if any(f in slugify(q.text) for f in args.filter)
+        ]
+        print(f"Filtered to {len(jobs)} questions matching {args.filter}\n")
 
     total = len(jobs)
     passed = 0
