@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Generic LLM agent harness with tool-use support"
 readme = "README.md"
 authors = [
-    { name = "chuckfinca", email = "chuckfinca@gmail.com" }
+    { name = "chuckfinca", email = "charles@appsimple.io" }
 ]
 requires-python = ">=3.12"
 dependencies = ["litellm>=1.60", "rich>=14"]
