@@ -56,7 +56,10 @@ def print_response(event: ResponseEvent) -> None:
 
     parts = [f"{event.latency_s}s"]
     if event.prompt_tokens or event.completion_tokens:
-        parts.append(f"{event.prompt_tokens} in, {event.completion_tokens} out")
+        token_info = f"{event.prompt_tokens} in, {event.completion_tokens} out"
+        if event.cached_tokens:
+            token_info += f" ({event.cached_tokens} cached)"
+        parts.append(token_info)
     if event.cost is not None:
         parts.append(f"${event.cost:.4f}")
     console.print(f"[bright_black]{' | '.join(parts)}[/bright_black]\n")

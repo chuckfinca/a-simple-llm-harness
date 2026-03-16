@@ -36,12 +36,14 @@ def _parse_response_message(response: Any) -> Message:
     return result
 
 
-def _extract_usage(response: Any) -> tuple[int, int]:
+def _extract_usage(response: Any) -> tuple[int, int, int]:
     if hasattr(response, "usage") and response.usage:
         prompt_tokens = getattr(response.usage, "prompt_tokens", None)
         completion_tokens = getattr(response.usage, "completion_tokens", None)
-        return (prompt_tokens or 0, completion_tokens or 0)
-    return 0, 0
+        details = getattr(response.usage, "prompt_tokens_details", None)
+        cached_tokens = getattr(details, "cached_tokens", None) or 0
+        return (prompt_tokens or 0, completion_tokens or 0, cached_tokens)
+    return 0, 0, 0
 
 
 def _extract_cost(response: Any) -> float | None:
@@ -62,6 +64,11 @@ _NUDGE_MESSAGE: Message = {
     ),
 }
 
+_DEFAULT_CACHE_INJECTION = [
+    {"location": "message", "role": "system"},
+    {"location": "message", "index": -1},
+]
+
 
 def _run_loop(
     *,
@@ -74,6 +81,9 @@ def _run_loop(
     trace: Trace,
     completion_kwargs: dict[str, Any],
 ) -> Generator[AgentEvent, None, None]:
+    completion_kwargs.setdefault(
+        "cache_control_injection_points", _DEFAULT_CACHE_INJECTION
+    )
     nudged = False
     for _ in range(max_turns):
         start = time.monotonic()
@@ -86,13 +96,14 @@ def _run_loop(
         )
         elapsed = time.monotonic() - start
 
-        prompt_tokens, completion_tokens = _extract_usage(response)
+        prompt_tokens, completion_tokens, cached_tokens = _extract_usage(response)
         cost = _extract_cost(response)
 
         trace.turns.append(
             Turn(
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
+                cached_tokens=cached_tokens,
                 latency_s=round(elapsed, 2),
                 cost=cost,
             )
@@ -112,6 +123,7 @@ def _run_loop(
                 content=trace.answer,
                 prompt_tokens=trace.prompt_tokens,
                 completion_tokens=trace.completion_tokens,
+                cached_tokens=trace.cached_tokens,
                 latency_s=trace.latency_s,
                 cost=trace.cost,
             )
@@ -148,6 +160,7 @@ def _run_loop(
         content=None,
         prompt_tokens=trace.prompt_tokens,
         completion_tokens=trace.completion_tokens,
+        cached_tokens=trace.cached_tokens,
         latency_s=trace.latency_s,
         cost=trace.cost,
     )

@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 class Turn:
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cached_tokens: int = 0
     latency_s: float = 0.0
     cost: float | None = None
 
@@ -37,6 +38,10 @@ class Trace:
     @property
     def completion_tokens(self) -> int:
         return sum(t.completion_tokens for t in self.turns)
+
+    @property
+    def cached_tokens(self) -> int:
+        return sum(t.cached_tokens for t in self.turns)
 
     @property
     def latency_s(self) -> float:

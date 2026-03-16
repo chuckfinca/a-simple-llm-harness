@@ -65,6 +65,7 @@ class TestAgentRun:
             content="hi",
             prompt_tokens=0,
             completion_tokens=0,
+            cached_tokens=0,
             latency_s=0.0,
             cost=None,
         )

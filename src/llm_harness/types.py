@@ -56,6 +56,7 @@ class ResponseEvent:
     content: str | None
     prompt_tokens: int
     completion_tokens: int
+    cached_tokens: int
     latency_s: float
     cost: float | None
 

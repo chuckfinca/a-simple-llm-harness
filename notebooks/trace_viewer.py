@@ -265,19 +265,24 @@ def _render_turn(
 def _render_telemetry(turns: list[dict], wall_time_s: float) -> str:
     telem_lines = []
     for i, t in enumerate(turns, 1):
+        cached = t.get("cached_tokens", 0)
+        cache_info = f" ({cached} cached)" if cached else ""
         cost = f" | ${t['cost']:.4f}" if t.get("cost") else ""
         telem_lines.append(
-            f"Turn {i}: {t['prompt_tokens']} in, "
+            f"Turn {i}: {t['prompt_tokens']} in{cache_info}, "
             f"{t['completion_tokens']} out, {t['latency_s']}s{cost}"
         )
 
     model_time = sum(t.get("latency_s", 0) for t in turns)
+    total_cached = sum(t.get("cached_tokens", 0) for t in turns)
     if wall_time_s > 0:
         tool_time = wall_time_s - model_time
         telem_lines.append(
             f"\nTotal: {wall_time_s:.1f}s wall"
             f" = {model_time:.1f}s model + {tool_time:.1f}s tool"
         )
+    if total_cached > 0:
+        telem_lines.append(f"Cached: {total_cached} tokens")
 
     return _collapsible(
         "<span style='color:#888;font-size:13px;'>telemetry</span>",
