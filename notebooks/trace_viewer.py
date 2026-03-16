@@ -218,6 +218,73 @@ def _render_message(
     return ""
 
 
+def _render_turn(
+    *,
+    turn_num: int,
+    messages: list[dict],
+    asst_idx: int,
+    turn_end: int,
+    prev_end: int,
+    tools: list[dict],
+    tool_calls: list[dict],
+    max_chars: int | None,
+) -> list[str]:
+    parts = [
+        f"<div style='border-top:2px solid #ddd;margin-top:16px;"
+        f"padding-top:8px;'>"
+        f"<span style='font-size:13px;color:#888;'>"
+        f"Turn {turn_num}</span></div>"
+    ]
+
+    if prev_end == 0:
+        parts.append(_render_tools(tools))
+        parts.append(_render_cached(messages[:prev_end]))
+    else:
+        parts.append(_render_cached(messages[:prev_end], tools=tools))
+
+    parts.extend(
+        _render_message(messages[i], max_chars, tool_calls)
+        for i in range(prev_end, asst_idx)
+    )
+
+    parts.append(
+        "<div style='border-left:3px solid #483;"
+        "padding-left:12px;margin:8px 0;'>"
+    )
+    parts.append(
+        _render_message(messages[asst_idx], max_chars, tool_calls)
+    )
+    parts.extend(
+        _render_message(messages[i], max_chars, tool_calls)
+        for i in range(asst_idx + 1, turn_end)
+    )
+    parts.append("</div>")
+    return parts
+
+
+def _render_telemetry(turns: list[dict], wall_time_s: float) -> str:
+    telem_lines = []
+    for i, t in enumerate(turns, 1):
+        cost = f" | ${t['cost']:.4f}" if t.get("cost") else ""
+        telem_lines.append(
+            f"Turn {i}: {t['prompt_tokens']} in, "
+            f"{t['completion_tokens']} out, {t['latency_s']}s{cost}"
+        )
+
+    model_time = sum(t.get("latency_s", 0) for t in turns)
+    if wall_time_s > 0:
+        tool_time = wall_time_s - model_time
+        telem_lines.append(
+            f"\nTotal: {wall_time_s:.1f}s wall"
+            f" = {model_time:.1f}s model + {tool_time:.1f}s tool"
+        )
+
+    return _collapsible(
+        "<span style='color:#888;font-size:13px;'>telemetry</span>",
+        "\n".join(telem_lines),
+    )
+
+
 def show_trace(data: dict, max_chars: int | None = None) -> None:
     """Render a full agent trace as HTML in Jupyter."""
     inner = data.get("trace", data)
@@ -228,7 +295,6 @@ def show_trace(data: dict, max_chars: int | None = None) -> None:
 
     parts = []
 
-    # Header
     passed = data.get("passed", False)
     badge_color = "#4a4" if passed else "#c44"
     badge_text = "PASS" if passed else "FAIL"
@@ -242,47 +308,21 @@ def show_trace(data: dict, max_chars: int | None = None) -> None:
         f"{len(tool_calls)} tool calls, {len(turns)} turns</span></div>"
     )
 
-    # Assertions
     if data.get("assertions"):
         parts.append(
             f"<div style='margin-bottom:8px;font-size:13px;'>"
             f"{_render_assertions(data['assertions'])}</div>"
         )
 
-    # Per-turn telemetry
     if turns:
-        telem_lines = []
-        for i, t in enumerate(turns, 1):
-            cost = f" | ${t['cost']:.4f}" if t.get("cost") else ""
-            telem_lines.append(
-                f"Turn {i}: {t['prompt_tokens']} in, "
-                f"{t['completion_tokens']} out, {t['latency_s']}s{cost}"
-            )
+        parts.append(_render_telemetry(turns, inner.get("wall_time_s", 0)))
 
-        model_time = sum(t.get("latency_s", 0) for t in turns)
-        wall_time = inner.get("wall_time_s", 0)
-        if wall_time > 0:
-            tool_time = wall_time - model_time
-            telem_lines.append(
-                f"\nTotal: {wall_time:.1f}s wall"
-                f" = {model_time:.1f}s model + {tool_time:.1f}s tool"
-            )
-
-        parts.append(
-            _collapsible(
-                "<span style='color:#888;font-size:13px;'>telemetry</span>",
-                "\n".join(telem_lines),
-            )
-        )
-
-    # Error
     if inner.get("error"):
         parts.append(
             f"<div style='color:#c44;margin:8px 0;'>"
             f"Error: {escape(inner['error'])}</div>"
         )
 
-    # Conversation turns
     if messages:
         asst_indices = [
             i for i, m in enumerate(messages) if m["role"] == "assistant"
@@ -290,7 +330,6 @@ def show_trace(data: dict, max_chars: int | None = None) -> None:
         prev_end = 0
 
         for turn_num, asst_idx in enumerate(asst_indices, 1):
-            # Find end of this turn (after tool results)
             turn_end = asst_idx + 1
             while (
                 turn_end < len(messages)
@@ -298,39 +337,18 @@ def show_trace(data: dict, max_chars: int | None = None) -> None:
             ):
                 turn_end += 1
 
-            parts.append(
-                f"<div style='border-top:2px solid #ddd;margin-top:16px;"
-                f"padding-top:8px;'>"
-                f"<span style='font-size:13px;color:#888;'>"
-                f"Turn {turn_num}</span></div>"
-            )
-
-            if prev_end == 0:
-                parts.append(_render_tools(tools))
-                parts.append(_render_cached(messages[:prev_end]))
-            else:
-                parts.append(
-                    _render_cached(messages[:prev_end], tools=tools)
+            parts.extend(
+                _render_turn(
+                    turn_num=turn_num,
+                    messages=messages,
+                    asst_idx=asst_idx,
+                    turn_end=turn_end,
+                    prev_end=prev_end,
+                    tools=tools,
+                    tool_calls=tool_calls,
+                    max_chars=max_chars,
                 )
-
-            parts.extend(
-                _render_message(messages[i], max_chars, tool_calls)
-                for i in range(prev_end, asst_idx)
             )
-
-            parts.append(
-                "<div style='border-left:3px solid #483;"
-                "padding-left:12px;margin:8px 0;'>"
-            )
-            parts.append(
-                _render_message(messages[asst_idx], max_chars, tool_calls)
-            )
-            parts.extend(
-                _render_message(messages[i], max_chars, tool_calls)
-                for i in range(asst_idx + 1, turn_end)
-            )
-            parts.append("</div>")
-
             prev_end = turn_end
     else:
         parts.append(

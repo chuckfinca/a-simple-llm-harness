@@ -49,6 +49,20 @@ def _extract_cost(response: Any) -> float | None:
     return float(cost) if cost is not None else None
 
 
+def _should_nudge(workspace: Path | None, trace: Trace, nudged: bool) -> bool:
+    """Models sometimes answer from memory without consulting the workspace."""
+    return bool(workspace) and not trace.tool_calls and not nudged
+
+
+_NUDGE_MESSAGE: Message = {
+    "role": "user",
+    "content": (
+        "Use the workspace tools to find evidence that supports "
+        "your answer. Do not answer from memory alone."
+    ),
+}
+
+
 def _run_loop(
     *,
     model: str,
@@ -88,17 +102,9 @@ def _run_loop(
         messages.append(assistant_msg)
 
         if not assistant_msg.get("tool_calls"):
-            if workspace and not trace.tool_calls and not nudged:
+            if _should_nudge(workspace, trace, nudged):
                 nudged = True
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            "Use the workspace tools to find evidence that supports "
-                            "your answer. Do not answer from memory alone."
-                        ),
-                    }
-                )
+                messages.append(_NUDGE_MESSAGE)
                 continue
 
             trace.answer = assistant_msg.get("content")
