@@ -266,15 +266,6 @@ def _parse_tool_result(result: str) -> ToolResultParsed:
     )
 
 
-def _enrich_tool_calls(trace: Trace) -> None:
-    for tool_call in trace.tool_calls:
-        parsed = _parse_tool_result(tool_call.get("result", ""))
-        tool_call.update({
-            "result_count": parsed.result_count,
-            "hit": parsed.succeeded,
-            "error": parsed.error,
-        })
-
 
 def run_question(model: str, workspace_name: str, question: Question) -> EvalResult:
     workspace = (Path(__file__).parent.parent / "test-data" / workspace_name).resolve()
@@ -305,7 +296,6 @@ def run_question(model: str, workspace_name: str, question: Question) -> EvalRes
         agent_run.trace.error = str(exc)
 
     agent_run.trace.wall_time_s = round(time.monotonic() - start, 2)
-    _enrich_tool_calls(agent_run.trace)
 
     assertions = evaluate_assertions(agent_run.trace, question)
     return EvalResult(
@@ -587,6 +577,7 @@ def _append_tool_calls_csv(results: list[EvalResult], model: str) -> None:
         for result in results:
             trace_id = f"{result.workspace}/{slugify(result.question)}"
             for step, tool_call in enumerate(result.trace.tool_calls):
+                parsed = _parse_tool_result(tool_call.get("result", ""))
                 writer.writerow(
                     {
                         "timestamp": timestamp,
@@ -595,9 +586,9 @@ def _append_tool_calls_csv(results: list[EvalResult], model: str) -> None:
                         "step": step,
                         "tool": tool_call["name"],
                         "arguments": tool_call["arguments"],
-                        "result_count": tool_call.get("result_count", ""),
-                        "hit": tool_call.get("hit", ""),
-                        "error": tool_call.get("error") or "",
+                        "result_count": parsed.result_count,
+                        "hit": parsed.succeeded,
+                        "error": parsed.error or "",
                     }
                 )
 

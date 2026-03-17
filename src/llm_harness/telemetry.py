@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Generator, Iterator
-from dataclasses import asdict, dataclass, field
-from pathlib import Path
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -63,8 +61,3 @@ class AgentRun:
 
     def __iter__(self) -> Iterator[AgentEvent]:
         return self._events
-
-
-def save_trace(trace: Trace, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(asdict(trace), indent=2, default=str))

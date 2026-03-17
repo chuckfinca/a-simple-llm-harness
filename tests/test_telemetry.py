@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
-from llm_harness.telemetry import AgentRun, Trace, Turn, save_trace
+from llm_harness.telemetry import AgentRun, Trace, Turn
 from llm_harness.types import ResponseEvent
 
 
@@ -41,22 +38,6 @@ class TestTrace:
         trace = Trace(model="test")
         trace.turns.append(Turn(prompt_tokens=10, completion_tokens=5, latency_s=1.0))
         assert trace.cost is None
-
-
-class TestSaveTrace:
-    def test_saves_json_file(self, tmp_path: Path) -> None:
-        trace = Trace(model="test-model", answer="hello")
-        trace.turns.append(Turn(prompt_tokens=10, completion_tokens=5, latency_s=1.0))
-
-        out = tmp_path / "traces" / "test.json"
-        save_trace(trace, out)
-
-        assert out.exists()
-        data = json.loads(out.read_text())
-        assert data["model"] == "test-model"
-        assert data["answer"] == "hello"
-        assert len(data["turns"]) == 1
-        assert data["turns"][0]["prompt_tokens"] == 10
 
 
 class TestAgentRun:

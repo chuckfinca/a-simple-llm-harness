@@ -134,7 +134,6 @@ def run_python(
             )
 
 
-
 def _truncate(text: str) -> str:
     if len(text) <= MAX_OUTPUT_CHARS:
         return text
