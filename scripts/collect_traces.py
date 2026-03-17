@@ -219,50 +219,61 @@ def slugify(text: str) -> str:
     return slug.strip("-")[:60]
 
 
-def check_assertions(result: EvalResult, question: Question) -> None:
-    answer = (result.trace.answer or "").lower()
-    effective_tool_count = len(result.trace.tool_calls)
+def evaluate_assertions(trace: Trace, question: Question) -> dict[str, bool]:
+    answer = (trace.answer or "").lower()
+    tool_count = len(trace.tool_calls)
+    assertions: dict[str, bool] = {}
 
-    if question.must_contain:
-        for term in question.must_contain:
-            result.assertions[f"contains '{term}'"] = term.lower() in answer
+    for term in question.must_contain:
+        assertions[f"contains '{term}'"] = term.lower() in answer
 
     if question.must_contain_any:
         found = any(term.lower() in answer for term in question.must_contain_any)
-        result.assertions[f"contains_any {question.must_contain_any}"] = found
+        assertions[f"contains_any {question.must_contain_any}"] = found
 
-    if question.must_not_contain:
-        for term in question.must_not_contain:
-            result.assertions[f"not contains '{term}'"] = term.lower() not in answer
+    for term in question.must_not_contain:
+        assertions[f"not contains '{term}'"] = term.lower() not in answer
 
-    result.assertions[f"min_tool_calls >= {question.min_tool_calls}"] = (
-        effective_tool_count >= question.min_tool_calls
+    assertions[f"min_tool_calls >= {question.min_tool_calls}"] = (
+        tool_count >= question.min_tool_calls
     )
 
-    result.assertions["has_answer"] = (
-        result.trace.answer is not None and result.trace.error is None
-    )
+    assertions["has_answer"] = trace.answer is not None and trace.error is None
 
-    result.passed = all(result.assertions.values())
+    return assertions
 
 
-def _parse_tool_result(result: str) -> tuple[int, bool, str | None]:
+@dataclass
+class ToolResultParsed:
+    result_count: int = 0
+    succeeded: bool = False
+    error: str | None = None
+
+
+def _parse_tool_result(result: str) -> ToolResultParsed:
     try:
         data = json.loads(result)
     except (json.JSONDecodeError, TypeError):
-        return 0, False, "invalid JSON"
+        return ToolResultParsed(error="invalid JSON")
 
     if "error" in data:
-        return 0, False, str(data["error"])
+        return ToolResultParsed(error=str(data["error"]))
 
     succeeded = data.get("exit_code") == 0
-    return (1 if succeeded else 0), succeeded, None
+    return ToolResultParsed(
+        result_count=1 if succeeded else 0,
+        succeeded=succeeded,
+    )
 
 
 def _enrich_tool_calls(trace: Trace) -> None:
     for tool_call in trace.tool_calls:
-        result_count, hit, error = _parse_tool_result(tool_call.get("result", ""))
-        tool_call.update({"result_count": result_count, "hit": hit, "error": error})
+        parsed = _parse_tool_result(tool_call.get("result", ""))
+        tool_call.update({
+            "result_count": parsed.result_count,
+            "hit": parsed.succeeded,
+            "error": parsed.error,
+        })
 
 
 def run_question(model: str, workspace_name: str, question: Question) -> EvalResult:
@@ -296,14 +307,15 @@ def run_question(model: str, workspace_name: str, question: Question) -> EvalRes
     agent_run.trace.wall_time_s = round(time.monotonic() - start, 2)
     _enrich_tool_calls(agent_run.trace)
 
-    result = EvalResult(
+    assertions = evaluate_assertions(agent_run.trace, question)
+    return EvalResult(
         workspace=workspace_name,
         question=question.text,
         category=question.category,
         trace=agent_run.trace,
+        assertions=assertions,
+        passed=all(assertions.values()),
     )
-    check_assertions(result, question)
-    return result
 
 
 def _run_all(model: str, jobs: list[tuple[str, Question]], workers: int):
@@ -458,13 +470,13 @@ def _extract_instruction_metrics(result: EvalResult) -> dict[str, object]:
         "citation_count": citation_count,
         "files_accessed": "",
         "tool_sequence": "→".join(
-            "P" for _ in result.trace.tool_calls
+            tc["name"] for tc in result.trace.tool_calls
         ),
         "stdout_truncations": stdout_truncations,
     }
 
 
-def _migrate_csv_header(csv_path: Path, columns: list[str]) -> None:
+def _rewrite_csv_if_schema_changed(csv_path: Path, columns: list[str]) -> None:
     """Rewrite a CSV if its header doesn't match the expected columns."""
     if not csv_path.exists():
         return
@@ -489,7 +501,7 @@ def _append_csv(
     run_type: str = "full",
 ) -> None:
     csv_path = Path(__file__).parent.parent / "traces" / "results.csv"
-    _migrate_csv_header(csv_path, CSV_COLUMNS)
+    _rewrite_csv_if_schema_changed(csv_path, CSV_COLUMNS)
 
     timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
 
@@ -560,7 +572,7 @@ TOOL_CALL_COLUMNS = [
 
 def _append_tool_calls_csv(results: list[EvalResult], model: str) -> None:
     csv_path = Path(__file__).parent.parent / "traces" / "tool_calls.csv"
-    _migrate_csv_header(csv_path, TOOL_CALL_COLUMNS)
+    _rewrite_csv_if_schema_changed(csv_path, TOOL_CALL_COLUMNS)
     timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
 
     with csv_path.open("a", newline="") as f:

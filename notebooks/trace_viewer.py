@@ -141,81 +141,91 @@ def _render_cached(
     )
 
 
+def _render_system_message(content: str, max_chars: int | None) -> str:
+    formatted = _format_json(content)
+    if max_chars is not None:
+        formatted = formatted[:max_chars]
+    return _collapsible(
+        f"<span style='color:#888;'>[system]</span>"
+        f" <span style='color:#888;font-size:12px;'>"
+        f"({len(content)} chars)</span>",
+        formatted,
+    )
+
+
+def _render_user_message(content: str) -> str:
+    return (
+        f"<div style='margin:8px 0;'>"
+        f"<b style='color:#36a;'>[user]</b> {escape(content)}</div>"
+    )
+
+
+def _render_tool_call(fn: dict) -> str:
+    try:
+        args_parsed = json.loads(fn["arguments"])
+    except (json.JSONDecodeError, TypeError):
+        args_parsed = {}
+
+    if fn["name"] == "run_python" and "code" in args_parsed:
+        code_html = escape(args_parsed["code"])
+        return (
+            f"<div style='margin:4px 0;'>"
+            f"<b style='color:#483;'>[assistant]</b> calls "
+            f"<code>{escape(fn['name'])}</code>"
+            f"<pre style='margin:2px 0 4px 16px;font-size:12px;"
+            f"background:#f6f6f6;padding:8px;"
+            f"border-radius:4px;'>{code_html}</pre></div>"
+        )
+
+    args = _format_json(fn["arguments"])
+    return (
+        f"<div style='margin:4px 0;'>"
+        f"<b style='color:#483;'>[assistant]</b> calls "
+        f"<code>{escape(fn['name'])}</code>"
+        f"<pre style='margin:2px 0 4px 16px;"
+        f"font-size:12px;'>{escape(args)}</pre></div>"
+    )
+
+
+def _render_assistant_message(content: str, tool_calls: list[dict]) -> str:
+    if tool_calls:
+        return "\n".join(_render_tool_call(tc["function"]) for tc in tool_calls)
+    return (
+        f"<div style='margin:8px 0;'>"
+        f"<b style='color:#483;'>[assistant]</b>"
+        f" ({len(content)} chars)"
+        f"<div style='margin:4px 0 8px 16px;"
+        f"white-space:pre-wrap;'>{escape(content)}</div></div>"
+    )
+
+
+def _render_tool_result_message(content: str, max_chars: int | None) -> str:
+    summary = _tool_result_summary(content)
+    formatted = _format_tool_result(content, max_chars)
+    return _collapsible(
+        f"<span style='color:#986;'>[tool result]</span>"
+        f" {escape(summary)}",
+        formatted,
+    )
+
+
+_MESSAGE_RENDERERS = {
+    "system": lambda m, mc, _tc: _render_system_message(m.get("content") or "", mc),
+    "user": lambda m, _mc, _tc: _render_user_message(m.get("content") or ""),
+    "assistant": lambda m, _mc, _tc: _render_assistant_message(
+        m.get("content") or "", m.get("tool_calls", [])
+    ),
+    "tool": lambda m, mc, _tc: _render_tool_result_message(m.get("content") or "", mc),
+}
+
+
 def _render_message(
     m: dict,
     max_chars: int | None = None,
     trace_tool_calls: list[dict] | None = None,
 ) -> str:
-    role = m["role"]
-    content = m.get("content") or ""
-    tool_calls = m.get("tool_calls", [])
-
-    if role == "system":
-        formatted = _format_json(content)
-        if max_chars is not None:
-            formatted = formatted[:max_chars]
-        return _collapsible(
-            f"<span style='color:#888;'>[system]</span>"
-            f" <span style='color:#888;font-size:12px;'>"
-            f"({len(content)} chars)</span>",
-            formatted,
-        )
-
-    if role == "user":
-        return (
-            f"<div style='margin:8px 0;'>"
-            f"<b style='color:#36a;'>[user]</b> {escape(content)}</div>"
-        )
-
-    if role == "assistant":
-        if tool_calls:
-            parts = []
-            for tc in tool_calls:
-                fn = tc["function"]
-                try:
-                    args_parsed = json.loads(fn["arguments"])
-                except (json.JSONDecodeError, TypeError):
-                    args_parsed = {}
-
-                if fn["name"] == "run_python" and "code" in args_parsed:
-                    code_html = escape(args_parsed["code"])
-                    parts.append(
-                        f"<div style='margin:4px 0;'>"
-                        f"<b style='color:#483;'>[assistant]</b> calls "
-                        f"<code>{escape(fn['name'])}</code>"
-                        f"<pre style='margin:2px 0 4px 16px;font-size:12px;"
-                        f"background:#f6f6f6;padding:8px;"
-                        f"border-radius:4px;'>{code_html}</pre></div>"
-                    )
-                else:
-                    args = _format_json(fn["arguments"])
-                    parts.append(
-                        f"<div style='margin:4px 0;'>"
-                        f"<b style='color:#483;'>[assistant]</b> calls "
-                        f"<code>{escape(fn['name'])}</code>"
-                        f"<pre style='margin:2px 0 4px 16px;"
-                        f"font-size:12px;'>{escape(args)}</pre></div>"
-                    )
-            return "\n".join(parts)
-
-        return (
-            f"<div style='margin:8px 0;'>"
-            f"<b style='color:#483;'>[assistant]</b>"
-            f" ({len(content)} chars)"
-            f"<div style='margin:4px 0 8px 16px;"
-            f"white-space:pre-wrap;'>{escape(content)}</div></div>"
-        )
-
-    if role == "tool":
-        summary = _tool_result_summary(content)
-        formatted = _format_tool_result(content, max_chars)
-        return _collapsible(
-            f"<span style='color:#986;'>[tool result]</span>"
-            f" {escape(summary)}",
-            formatted,
-        )
-
-    return ""
+    renderer = _MESSAGE_RENDERERS.get(m["role"])
+    return renderer(m, max_chars, trace_tool_calls) if renderer else ""
 
 
 def _render_turn(
