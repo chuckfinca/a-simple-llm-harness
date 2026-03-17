@@ -42,6 +42,7 @@ def ensure_sandbox_image() -> None:
 
 def _docker_run(
     volumes: list[tuple[str, str]],
+    writable_volumes: list[tuple[str, str]],
     command: list[str],
     *,
     timeout: int = TIMEOUT_SECONDS,
@@ -50,6 +51,8 @@ def _docker_run(
     volume_args = []
     for src, dest in volumes:
         volume_args += ["-v", f"{src}:{dest}:ro"]
+    for src, dest in writable_volumes:
+        volume_args += ["-v", f"{src}:{dest}"]
 
     try:
         return subprocess.run(
@@ -86,6 +89,7 @@ def run_python(
     code: str,
     *,
     workspace: Path | None = None,
+    scratch_dir: Path | None = None,
     timeout: int = TIMEOUT_SECONDS,
 ) -> str:
     ensure_sandbox_image()
@@ -100,9 +104,14 @@ def run_python(
         if workspace is not None:
             volumes.append((str(workspace), "/workspace"))
 
+        writable_volumes: list[tuple[str, str]] = []
+        if scratch_dir is not None:
+            writable_volumes.append((str(scratch_dir), "/scratch"))
+
         try:
             result = _docker_run(
                 volumes=volumes,
+                writable_volumes=writable_volumes,
                 command=["python", "/home/sandbox/script.py"],
                 timeout=timeout,
             )

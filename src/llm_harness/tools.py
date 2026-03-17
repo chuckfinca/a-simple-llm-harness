@@ -28,7 +28,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 
 
 def execute_tool(
-    name: str, arguments_json: str, *, workspace: Path | None = None
+    name: str,
+    arguments_json: str,
+    *,
+    workspace: Path | None = None,
+    scratch_dir: Path | None = None,
 ) -> str:
     try:
         args: dict[str, Any] = json.loads(arguments_json) if arguments_json else {}
@@ -36,5 +40,5 @@ def execute_tool(
         return json.dumps({"error": f"Invalid JSON arguments: {arguments_json}"})
 
     if name == "run_python":
-        return run_python(args.get("code", ""), workspace=workspace)
+        return run_python(args.get("code", ""), workspace=workspace, scratch_dir=scratch_dir)
     return json.dumps({"error": f"Unknown tool: {name}"})

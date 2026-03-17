@@ -18,7 +18,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "test-data" / "sec-10k"
 
@@ -132,6 +132,19 @@ def _strip_xbrl_noise(soup: BeautifulSoup) -> None:
         el.decompose()
 
 
+def _table_to_text(table: Tag) -> str:
+    """Convert an HTML table to tab-separated text."""
+    rows = []
+    for tr in table.find_all("tr"):
+        cells = [
+            td.get_text(separator=" ", strip=True)
+            for td in tr.find_all(["td", "th"])
+        ]
+        if any(cells):
+            rows.append("\t".join(cells))
+    return "\n".join(rows)
+
+
 def download_filing_text(cik: str, accession: str, primary_doc: str) -> str:
     """Download filing HTML and extract readable plain text."""
     cik_num = str(int(cik))
@@ -143,6 +156,11 @@ def download_filing_text(cik: str, accession: str, primary_doc: str) -> str:
     html = _fetch_bytes(url)
     soup = BeautifulSoup(html, "html.parser")
     _strip_xbrl_noise(soup)
+
+    # Replace tables with tab-separated text to preserve column alignment
+    for table in soup.find_all("table"):
+        table.replace_with(soup.new_string("\n" + _table_to_text(table) + "\n"))
+
     return soup.get_text(separator="\n", strip=True)
 
 
