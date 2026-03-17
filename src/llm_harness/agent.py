@@ -71,6 +71,18 @@ _DEFAULT_CACHE_INJECTION = [
 ]
 
 
+def _snapshot_scratch(scratch_dir: Path) -> dict[str, str]:
+    files = {}
+    for p in sorted(scratch_dir.rglob("*")):
+        if not p.is_file():
+            continue
+        try:
+            files[str(p.relative_to(scratch_dir))] = p.read_text()
+        except (UnicodeDecodeError, OSError):
+            files[str(p.relative_to(scratch_dir))] = "<binary>"
+    return files
+
+
 def _run_loop(
     *,
     model: str,
@@ -88,88 +100,96 @@ def _run_loop(
     nudged = False
     with tempfile.TemporaryDirectory(prefix="lh-scratch-") as scratch:
         scratch_dir = Path(scratch)
-        for _ in range(max_turns):
-            start = time.monotonic()
-            response = completion(
-                model=model,
-                messages=messages,
-                tools=tools,
-                num_retries=2,
-                **completion_kwargs,
+        try:
+            for _ in range(max_turns):
+                start = time.monotonic()
+                response = completion(
+                    model=model,
+                    messages=messages,
+                    tools=tools,
+                    num_retries=2,
+                    **completion_kwargs,
+                )
+                elapsed = time.monotonic() - start
+
+                prompt_tokens, completion_tokens, cached_tokens = _extract_usage(
+                    response
+                )
+                cost = _extract_cost(response)
+
+                trace.turns.append(
+                    Turn(
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        cached_tokens=cached_tokens,
+                        latency_s=round(elapsed, 2),
+                        cost=cost,
+                    )
+                )
+
+                assistant_msg = _parse_response_message(response)
+                messages.append(assistant_msg)
+
+                if not assistant_msg.get("tool_calls"):
+                    if _should_nudge(workspace, trace, nudged):
+                        nudged = True
+                        messages.append(_NUDGE_MESSAGE)
+                        continue
+
+                    trace.answer = assistant_msg.get("content")
+                    yield ResponseEvent(
+                        content=trace.answer,
+                        prompt_tokens=trace.prompt_tokens,
+                        completion_tokens=trace.completion_tokens,
+                        cached_tokens=trace.cached_tokens,
+                        latency_s=trace.latency_s,
+                        cost=trace.cost,
+                    )
+                    return
+
+                for tool_call in assistant_msg["tool_calls"]:
+                    tool_function = tool_call["function"]
+                    yield ToolCallEvent(
+                        name=tool_function["name"],
+                        arguments=tool_function["arguments"],
+                    )
+
+                    result = execute_tool(
+                        tool_function["name"],
+                        tool_function["arguments"],
+                        workspace=workspace,
+                        scratch_dir=scratch_dir,
+                    )
+                    yield ToolResultEvent(
+                        name=tool_function["name"], result=result
+                    )
+
+                    trace.tool_calls.append(
+                        {
+                            "name": tool_function["name"],
+                            "arguments": tool_function["arguments"],
+                            "result": result,
+                        }
+                    )
+
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "content": result,
+                        }
+                    )
+
+            yield ResponseEvent(
+                content=None,
+                prompt_tokens=trace.prompt_tokens,
+                completion_tokens=trace.completion_tokens,
+                cached_tokens=trace.cached_tokens,
+                latency_s=trace.latency_s,
+                cost=trace.cost,
             )
-            elapsed = time.monotonic() - start
-
-            prompt_tokens, completion_tokens, cached_tokens = _extract_usage(response)
-            cost = _extract_cost(response)
-
-            trace.turns.append(
-                Turn(
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    cached_tokens=cached_tokens,
-                    latency_s=round(elapsed, 2),
-                    cost=cost,
-                )
-            )
-
-            assistant_msg = _parse_response_message(response)
-            messages.append(assistant_msg)
-
-            if not assistant_msg.get("tool_calls"):
-                if _should_nudge(workspace, trace, nudged):
-                    nudged = True
-                    messages.append(_NUDGE_MESSAGE)
-                    continue
-
-                trace.answer = assistant_msg.get("content")
-                yield ResponseEvent(
-                    content=trace.answer,
-                    prompt_tokens=trace.prompt_tokens,
-                    completion_tokens=trace.completion_tokens,
-                    cached_tokens=trace.cached_tokens,
-                    latency_s=trace.latency_s,
-                    cost=trace.cost,
-                )
-                return
-
-            for tool_call in assistant_msg["tool_calls"]:
-                tool_function = tool_call["function"]
-                yield ToolCallEvent(
-                    name=tool_function["name"], arguments=tool_function["arguments"]
-                )
-
-                result = execute_tool(
-                    tool_function["name"],
-                    tool_function["arguments"],
-                    workspace=workspace,
-                    scratch_dir=scratch_dir,
-                )
-                yield ToolResultEvent(name=tool_function["name"], result=result)
-
-                trace.tool_calls.append(
-                    {
-                        "name": tool_function["name"],
-                        "arguments": tool_function["arguments"],
-                        "result": result,
-                    }
-                )
-
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call["id"],
-                        "content": result,
-                    }
-                )
-
-        yield ResponseEvent(
-            content=None,
-            prompt_tokens=trace.prompt_tokens,
-            completion_tokens=trace.completion_tokens,
-            cached_tokens=trace.cached_tokens,
-            latency_s=trace.latency_s,
-            cost=trace.cost,
-        )
+        finally:
+            trace.scratch_files = _snapshot_scratch(scratch_dir)
 
 
 def run_agent_loop(

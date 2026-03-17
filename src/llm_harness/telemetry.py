@@ -30,6 +30,7 @@ class Trace:
     answer: str | None = None
     error: str | None = None
     wall_time_s: float = 0.0
+    scratch_files: dict[str, str] = field(default_factory=dict)
 
     @property
     def prompt_tokens(self) -> int:
