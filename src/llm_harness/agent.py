@@ -137,15 +137,7 @@ def _run_loop(
                         continue
 
                     trace.answer = assistant_msg.get("content")
-                    yield ResponseEvent(
-                        content=trace.answer,
-                        prompt_tokens=trace.prompt_tokens,
-                        completion_tokens=trace.completion_tokens,
-                        cached_tokens=trace.cached_tokens,
-                        latency_s=trace.latency_s,
-                        cost=trace.cost,
-                    )
-                    return
+                    break
 
                 for tool_call in assistant_msg["tool_calls"]:
                     tool_function = tool_call["function"]
@@ -181,7 +173,7 @@ def _run_loop(
                     )
 
             yield ResponseEvent(
-                content=None,
+                content=trace.answer,
                 prompt_tokens=trace.prompt_tokens,
                 completion_tokens=trace.completion_tokens,
                 cached_tokens=trace.cached_tokens,
