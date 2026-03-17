@@ -77,7 +77,7 @@ def _run_loop(
     tools: list[ToolDef],
     completion: CompletionFunc,
     workspace: Path | None = None,
-    max_turns: int = 20,
+    max_turns: int = 30,
     trace: Trace,
     completion_kwargs: dict[str, Any],
 ) -> Generator[AgentEvent, None, None]:
@@ -173,7 +173,7 @@ def run_agent_loop(
     tools: list[ToolDef],
     completion: CompletionFunc,
     workspace: Path | None = None,
-    max_turns: int = 20,
+    max_turns: int = 30,
     **completion_kwargs: Any,
 ) -> AgentRun:
     trace = Trace(

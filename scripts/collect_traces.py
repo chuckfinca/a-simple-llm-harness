@@ -395,7 +395,8 @@ def main() -> None:
                     if not ok:
                         print(f"    FAIL: {name}")
 
-    _append_csv(results, model)
+    run_type = "rerun" if args.filter else "full"
+    _append_csv(results, model, run_type)
     _append_tool_calls_csv(results, model)
 
 
@@ -429,6 +430,7 @@ CSV_COLUMNS = [
     "stdout_truncations",
     "failed_assertions",
     "error",
+    "run_type",
 ]
 
 
@@ -484,6 +486,7 @@ def _migrate_csv_header(csv_path: Path, columns: list[str]) -> None:
 def _append_csv(
     results: list[EvalResult],
     model: str,
+    run_type: str = "full",
 ) -> None:
     csv_path = Path(__file__).parent.parent / "traces" / "results.csv"
     _migrate_csv_header(csv_path, CSV_COLUMNS)
@@ -535,6 +538,7 @@ def _append_csv(
                         "; ".join(failed_assertions) if failed_assertions else ""
                     ),
                     "error": trace.error or "",
+                    "run_type": run_type,
                 }
             )
 
