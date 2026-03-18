@@ -45,6 +45,8 @@ class Question:
     must_not_contain: list[str] = field(default_factory=list)
     # Must have at least this many tool calls
     min_tool_calls: int = 1
+    # Optional base system prompt for this question
+    instructions: str = ""
 
 
 QUESTIONS: dict[str, list[Question]] = {
@@ -197,6 +199,7 @@ def _load_external_questions() -> dict[str, list[Question]]:
                 must_contain_any=q.get("must_contain_any", []),
                 must_not_contain=q.get("must_not_contain", []),
                 min_tool_calls=q.get("min_tool_calls", 1),
+                instructions=q.get("instructions", ""),
             )
             for q in raw
         ]
@@ -271,7 +274,7 @@ def run_question(model: str, workspace_name: str, question: Question) -> EvalRes
     workspace = (Path(__file__).parent.parent / "test-data" / workspace_name).resolve()
 
     system_prompt = build_system_prompt(
-        base_prompt="",
+        base_prompt=question.instructions,
         workspace=workspace,
     )
 
