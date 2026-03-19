@@ -269,7 +269,6 @@ def _parse_tool_result(result: str) -> ToolResultParsed:
     )
 
 
-
 def run_question(model: str, workspace_name: str, question: Question) -> EvalResult:
     workspace = (Path(__file__).parent.parent / "test-data" / workspace_name).resolve()
 
@@ -361,9 +360,7 @@ def main() -> None:
 
     if args.filter:
         jobs = [
-            (ws, q)
-            for ws, q in jobs
-            if any(f in slugify(q.text) for f in args.filter)
+            (ws, q) for ws, q in jobs if any(f in slugify(q.text) for f in args.filter)
         ]
         print(f"Filtered to {len(jobs)} questions matching {args.filter}\n")
 
@@ -466,9 +463,7 @@ def _extract_instruction_metrics(result: EvalResult) -> dict[str, object]:
         "has_sources_section": has_sources_section,
         "citation_count": citation_count,
         "files_accessed": "",
-        "tool_sequence": "→".join(
-            tc["name"] for tc in result.trace.tool_calls
-        ),
+        "tool_sequence": "→".join(tc["name"] for tc in result.trace.tool_calls),
         "stdout_truncations": stdout_truncations,
     }
 
@@ -532,14 +527,10 @@ def _append_csv(
                     "total_tokens": prompt_tokens + completion_tokens,
                     "cost_usd": f"{trace.cost:.6f}" if trace.cost else "",
                     "model_time_s": trace.latency_s,
-                    "tool_time_s": round(
-                        trace.wall_time_s - trace.latency_s, 2
-                    )
+                    "tool_time_s": round(trace.wall_time_s - trace.latency_s, 2)
                     if trace.wall_time_s
                     else "",
-                    "avg_turn_latency_s": round(
-                        trace.latency_s / len(trace.turns), 2
-                    )
+                    "avg_turn_latency_s": round(trace.latency_s / len(trace.turns), 2)
                     if trace.turns
                     else "",
                     "wall_time_s": trace.wall_time_s,

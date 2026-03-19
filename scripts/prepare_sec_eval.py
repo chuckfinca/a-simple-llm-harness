@@ -137,8 +137,7 @@ def _table_to_text(table: Tag) -> str:
     rows = []
     for tr in table.find_all("tr"):
         cells = [
-            td.get_text(separator=" ", strip=True)
-            for td in tr.find_all(["td", "th"])
+            td.get_text(separator=" ", strip=True) for td in tr.find_all(["td", "th"])
         ]
         if any(cells):
             rows.append("\t".join(cells))
@@ -173,15 +172,9 @@ def _extract_latest_annual_value(
     company_facts: dict, taxonomy: str, concept: str
 ) -> tuple[int, int] | None:
     """Return (value, fiscal_year) for the most recent 10-K annual entry."""
-    concept_data = (
-        company_facts.get("facts", {}).get(taxonomy, {}).get(concept, {})
-    )
+    concept_data = company_facts.get("facts", {}).get(taxonomy, {}).get(concept, {})
     for entries in concept_data.get("units", {}).values():
-        annual = [
-            e
-            for e in entries
-            if e.get("form") == "10-K" and e.get("fp") == "FY"
-        ]
+        annual = [e for e in entries if e.get("form") == "10-K" and e.get("fp") == "FY"]
         if annual:
             annual.sort(key=lambda e: e.get("end", ""), reverse=True)
             return int(annual[0]["val"]), int(annual[0]["fy"])
@@ -196,9 +189,7 @@ def extract_facts(cik: str) -> dict[str, tuple[int, int]]:
     results: dict[str, tuple[int, int]] = {}
     for fact_name, defn in FACT_DEFINITIONS.items():
         for taxonomy, concept in defn["concepts"]:
-            found = _extract_latest_annual_value(
-                company_facts, taxonomy, concept
-            )
+            found = _extract_latest_annual_value(company_facts, taxonomy, concept)
             if found:
                 results[fact_name] = found
                 break
@@ -273,9 +264,7 @@ def _generate_comparison_questions(
     tickers = list(company_data.keys())
 
     for fact_name in ("revenue", "net_income", "total_assets"):
-        with_fact = [
-            t for t in tickers if fact_name in company_data[t]["facts"]
-        ]
+        with_fact = [t for t in tickers if fact_name in company_data[t]["facts"]]
         for i, t1 in enumerate(with_fact):
             for t2 in with_fact[i + 1 :]:
                 v1, fy1 = company_data[t1]["facts"][fact_name]
@@ -308,9 +297,7 @@ def _generate_multi_doc_questions(
     tickers = list(company_data.keys())
 
     for fact_name in ("revenue", "net_income", "total_assets", "employees"):
-        with_fact = [
-            t for t in tickers if fact_name in company_data[t]["facts"]
-        ]
+        with_fact = [t for t in tickers if fact_name in company_data[t]["facts"]]
         if len(with_fact) < 3:
             continue
         best = max(
@@ -321,8 +308,7 @@ def _generate_multi_doc_questions(
         questions.append(
             {
                 "text": (
-                    f"Which company in the dataset had the highest "
-                    f"{defn['label']}?"
+                    f"Which company in the dataset had the highest {defn['label']}?"
                 ),
                 "category": "multi_doc",
                 "must_contain": [company_data[best]["name"].lower()],
@@ -343,9 +329,7 @@ def generate_all_candidate_questions(
     )
 
 
-def sample_balanced(
-    candidates: list[dict], n: int, rng: random.Random
-) -> list[dict]:
+def sample_balanced(candidates: list[dict], n: int, rng: random.Random) -> list[dict]:
     """Sample n questions, ensuring representation from each category."""
     by_category: dict[str, list[dict]] = {}
     for q in candidates:
@@ -442,8 +426,7 @@ def main() -> None:
         categories[q["category"]] = categories.get(q["category"], 0) + 1
 
     print(
-        f"Wrote {len(selected)} questions to {questions_path}\n"
-        f"Categories: {categories}"
+        f"Wrote {len(selected)} questions to {questions_path}\nCategories: {categories}"
     )
 
 

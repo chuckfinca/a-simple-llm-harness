@@ -152,9 +152,7 @@ def _run_loop(
                         workspace=workspace,
                         scratch_dir=scratch_dir,
                     )
-                    yield ToolResultEvent(
-                        name=tool_function["name"], result=result
-                    )
+                    yield ToolResultEvent(name=tool_function["name"], result=result)
 
                     trace.tool_calls.append(
                         {

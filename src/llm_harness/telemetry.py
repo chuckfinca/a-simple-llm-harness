@@ -53,9 +53,7 @@ class Trace:
 
 
 class AgentRun:
-    def __init__(
-        self, events: Generator[AgentEvent, None, None], trace: Trace
-    ) -> None:
+    def __init__(self, events: Generator[AgentEvent, None, None], trace: Trace) -> None:
         self._events = events
         self.trace = trace
 

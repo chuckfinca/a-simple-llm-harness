@@ -15,9 +15,7 @@ def _format_json(text: str) -> str:
         return text
 
 
-def _collapsible(
-    summary_html: str, detail_text: str, open_: bool = False
-) -> str:
+def _collapsible(summary_html: str, detail_text: str, open_: bool = False) -> str:
     open_attr = " open" if open_ else ""
     return (
         f"<details{open_attr}><summary>{summary_html}</summary>"
@@ -80,9 +78,7 @@ def _render_assertions(assertions: dict) -> str:
     for name, ok in assertions.items():
         icon = "✓" if ok else "✗"
         color = "#4a4" if ok else "#c44"
-        parts.append(
-            f"<span style='color:{color};'>{icon}</span> {escape(name)}"
-        )
+        parts.append(f"<span style='color:{color};'>{icon}</span> {escape(name)}")
     return "&nbsp;&nbsp;".join(parts)
 
 
@@ -101,9 +97,7 @@ def _render_tools(tools: list[dict]) -> str:
     )
 
 
-def _render_cached(
-    messages: list[dict], tools: list[dict] | None = None
-) -> str:
+def _render_cached(messages: list[dict], tools: list[dict] | None = None) -> str:
     if not messages and not tools:
         return ""
     summary_parts = []
@@ -125,9 +119,7 @@ def _render_cached(
             lines.append(f"[user] {content[:100]}")
         elif role == "assistant":
             if tool_calls:
-                names = ", ".join(
-                    tc["function"]["name"] for tc in tool_calls
-                )
+                names = ", ".join(tc["function"]["name"] for tc in tool_calls)
                 lines.append(f"[assistant] calls {names}")
             else:
                 lines.append(f"[assistant] ({len(content)} chars)")
@@ -135,8 +127,7 @@ def _render_cached(
             lines.append(f"[tool result] ({len(content)} chars)")
 
     return _collapsible(
-        f"<span style='color:#888;font-size:13px;'>"
-        f"{' + '.join(summary_parts)}</span>",
+        f"<span style='color:#888;font-size:13px;'>{' + '.join(summary_parts)}</span>",
         "\n".join(lines),
     )
 
@@ -203,8 +194,7 @@ def _render_tool_result_message(content: str, max_chars: int | None) -> str:
     summary = _tool_result_summary(content)
     formatted = _format_tool_result(content, max_chars)
     return _collapsible(
-        f"<span style='color:#986;'>[tool result]</span>"
-        f" {escape(summary)}",
+        f"<span style='color:#986;'>[tool result]</span> {escape(summary)}",
         formatted,
     )
 
@@ -258,12 +248,9 @@ def _render_turn(
     )
 
     parts.append(
-        "<div style='border-left:3px solid #483;"
-        "padding-left:12px;margin:8px 0;'>"
+        "<div style='border-left:3px solid #483;padding-left:12px;margin:8px 0;'>"
     )
-    parts.append(
-        _render_message(messages[asst_idx], max_chars, tool_calls)
-    )
+    parts.append(_render_message(messages[asst_idx], max_chars, tool_calls))
     parts.extend(
         _render_message(messages[i], max_chars, tool_calls)
         for i in range(asst_idx + 1, turn_end)
@@ -339,17 +326,12 @@ def show_trace(data: dict, max_chars: int | None = None) -> None:
         )
 
     if messages:
-        asst_indices = [
-            i for i, m in enumerate(messages) if m["role"] == "assistant"
-        ]
+        asst_indices = [i for i, m in enumerate(messages) if m["role"] == "assistant"]
         prev_end = 0
 
         for turn_num, asst_idx in enumerate(asst_indices, 1):
             turn_end = asst_idx + 1
-            while (
-                turn_end < len(messages)
-                and messages[turn_end]["role"] == "tool"
-            ):
+            while turn_end < len(messages) and messages[turn_end]["role"] == "tool":
                 turn_end += 1
 
             parts.extend(
@@ -366,8 +348,6 @@ def show_trace(data: dict, max_chars: int | None = None) -> None:
             )
             prev_end = turn_end
     else:
-        parts.append(
-            "<div style='color:#888;'>No messages in trace</div>"
-        )
+        parts.append("<div style='color:#888;'>No messages in trace</div>")
 
     display(HTML("\n".join(parts)))

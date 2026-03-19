@@ -40,5 +40,7 @@ def execute_tool(
         return json.dumps({"error": f"Invalid JSON arguments: {arguments_json}"})
 
     if name == "run_python":
-        return run_python(args.get("code", ""), workspace=workspace, scratch_dir=scratch_dir)
+        return run_python(
+            args.get("code", ""), workspace=workspace, scratch_dir=scratch_dir
+        )
     return json.dumps({"error": f"Unknown tool: {name}"})
