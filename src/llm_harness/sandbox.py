@@ -106,7 +106,7 @@ def run_python(
 
         writable_volumes: list[tuple[str, str]] = []
         if scratch_dir is not None:
-            writable_volumes.append((str(scratch_dir), "/scratch"))
+            writable_volumes.append((str(scratch_dir), "/scratchpad"))
 
         try:
             result = _docker_run(
