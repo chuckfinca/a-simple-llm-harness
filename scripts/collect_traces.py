@@ -15,8 +15,8 @@ import csv
 import json
 import os
 import re
+import tempfile
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -47,6 +47,8 @@ class Question:
     min_tool_calls: int = 1
     # Optional base system prompt for this question
     instructions: str = ""
+    # Questions with the same session share message history and scratchpad
+    session: str = ""
 
 
 QUESTIONS: dict[str, list[Question]] = {
@@ -200,6 +202,7 @@ def _load_external_questions() -> dict[str, list[Question]]:
                 must_not_contain=q.get("must_not_contain", []),
                 min_tool_calls=q.get("min_tool_calls", 1),
                 instructions=q.get("instructions", ""),
+                session=q.get("session", ""),
             )
             for q in raw
         ]
@@ -269,18 +272,24 @@ def _parse_tool_result(result: str) -> ToolResultParsed:
     )
 
 
-def run_question(model: str, workspace_name: str, question: Question) -> EvalResult:
+def run_question(
+    model: str,
+    workspace_name: str,
+    question: Question,
+    *,
+    messages: list[Message] | None = None,
+    scratch_dir: Path | None = None,
+) -> EvalResult:
     workspace = (Path(__file__).parent.parent / "test-data" / workspace_name).resolve()
 
-    system_prompt = build_system_prompt(
-        base_prompt=question.instructions,
-        workspace=workspace,
-    )
+    if messages is None:
+        system_prompt = build_system_prompt(
+            base_prompt=question.instructions,
+            workspace=workspace,
+        )
+        messages = [{"role": "system", "content": system_prompt}]
 
-    messages: list[Message] = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": question.text},
-    ]
+    messages.append({"role": "user", "content": question.text})
 
     start = time.monotonic()
     agent_run = run_agent_loop(
@@ -289,6 +298,7 @@ def run_question(model: str, workspace_name: str, question: Question) -> EvalRes
         tools=TOOL_DEFINITIONS,
         completion=litellm.completion,
         workspace=workspace,
+        scratch_dir=scratch_dir,
     )
 
     try:
@@ -310,22 +320,49 @@ def run_question(model: str, workspace_name: str, question: Question) -> EvalRes
     )
 
 
-def _run_all(model: str, jobs: list[tuple[str, Question]], workers: int):
-    """Yield (workspace_name, question, result) for each completed job."""
-    if workers <= 1:
-        for workspace_name, question in jobs:
-            result = run_question(model, workspace_name, question)
+def _run_session(model: str, workspace_name: str, questions: list[Question]):
+    """Run questions sequentially with shared message history and scratchpad."""
+    workspace = (Path(__file__).parent.parent / "test-data" / workspace_name).resolve()
+    system_prompt = build_system_prompt(
+        base_prompt=questions[0].instructions,
+        workspace=workspace,
+    )
+    messages: list[Message] = [{"role": "system", "content": system_prompt}]
+    with tempfile.TemporaryDirectory(prefix="lh-scratch-") as scratch:
+        scratch_dir = Path(scratch)
+        for question in questions:
+            result = run_question(
+                model,
+                workspace_name,
+                question,
+                messages=messages,
+                scratch_dir=scratch_dir,
+            )
             yield workspace_name, question, result
-    else:
-        print(f"Running {len(jobs)} questions with {workers} workers\n", flush=True)
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {}
-            for workspace_name, question in jobs:
-                future = pool.submit(run_question, model, workspace_name, question)
-                futures[future] = (workspace_name, question)
-            for future in as_completed(futures):
-                workspace_name, question = futures[future]
-                yield workspace_name, question, future.result()
+
+
+def _run_all(model: str, jobs: list[tuple[str, Question]]):
+    """Yield (workspace_name, question, result) for each completed job.
+
+    Questions with the same ``session`` value (within a workspace) share
+    message history and scratchpad.  They always run sequentially.
+    """
+    # Group session questions; standalone questions run independently.
+    session_groups: dict[tuple[str, str], list[tuple[str, Question]]] = {}
+    standalone: list[tuple[str, Question]] = []
+    for workspace_name, question in jobs:
+        if question.session:
+            key = (workspace_name, question.session)
+            session_groups.setdefault(key, []).append((workspace_name, question))
+        else:
+            standalone.append((workspace_name, question))
+
+    for workspace_name, question in standalone:
+        result = run_question(model, workspace_name, question)
+        yield workspace_name, question, result
+    for (_ws, _sess), group in session_groups.items():
+        questions = [q for _, q in group]
+        yield from _run_session(model, _ws, questions)
 
 
 def main() -> None:
@@ -371,7 +408,7 @@ def main() -> None:
     results: list[EvalResult] = []
 
     for completed, (workspace_name, question, result) in enumerate(
-        _run_all(model, jobs, args.workers), 1
+        _run_all(model, jobs), 1
     ):
         print(
             f"[{completed}/{total}] {workspace_name}: {question.text[:60]}...",

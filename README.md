@@ -33,11 +33,10 @@ src/llm_harness/
 
 ```
 uv run python scripts/collect_traces.py
-uv run python scripts/collect_traces.py --workers 4
 uv run python scripts/collect_traces.py --filter highest-revenue
 ```
 
-19 questions across 5 document corpora, measured with code-based assertions.
+20 questions across 5 document corpora, measured with code-based assertions.
 
 | Category | Tests | Example |
 |---|---|---|
@@ -46,6 +45,20 @@ uv run python scripts/collect_traces.py --filter highest-revenue
 | `multi_doc` | Synthesize across files | Highest revenue in dataset |
 | `comparison` | Compare two things | JPMorgan Chase vs UnitedHealth |
 | `enumeration` | Search and list | Countries in Africa |
+| `analysis` | Write analytical commentary | Occupancy trend for exec summary |
+
+Questions run independently by default. Questions in the same **session**
+share message history and scratchpad, so the model builds on prior
+exploration instead of starting fresh. This supports two use cases:
+
+- **Standalone questions** — each gets a clean conversation (the common case
+  for factual retrieval and document Q&A).
+- **Session questions** — a sequence of questions that share context, useful
+  when generating related sections of a report where earlier analysis
+  informs later commentary.
+
+Sessions are defined per-question in `questions.json` via the `session`
+field. Questions without a session run standalone.
 
 Traces save as JSON in `traces/<model>/` with CSV in `traces/results.csv`.
 `notebooks/trace_analysis.ipynb` provides run-over-run dashboards and an
