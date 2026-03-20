@@ -216,6 +216,7 @@ class EvalResult:
     question: str
     category: str
     trace: Trace
+    session: str = ""
     assertions: dict[str, bool] = field(default_factory=dict)
     passed: bool = False
 
@@ -316,6 +317,7 @@ def run_question(
         question=question.text,
         category=question.category,
         trace=agent_run.trace,
+        session=question.session,
         assertions=assertions,
         passed=all(assertions.values()),
     )
@@ -454,6 +456,7 @@ CSV_COLUMNS = [
     "timestamp",
     "model",
     "trace_id",
+    "session",
     "workspace",
     "category",
     "question",
@@ -563,6 +566,7 @@ def _append_csv(
                     "timestamp": timestamp,
                     "model": model,
                     "trace_id": f"{result.workspace}/{slugify(result.question)}",
+                    "session": result.session,
                     "workspace": result.workspace,
                     "category": result.category,
                     "question": result.question,
