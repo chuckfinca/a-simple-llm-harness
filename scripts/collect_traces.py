@@ -17,6 +17,7 @@ import os
 import re
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -341,11 +342,12 @@ def _run_session(model: str, workspace_name: str, questions: list[Question]):
             yield workspace_name, question, result
 
 
-def _run_all(model: str, jobs: list[tuple[str, Question]]):
+def _run_all(model: str, jobs: list[tuple[str, Question]], workers: int):
     """Yield (workspace_name, question, result) for each completed job.
 
     Questions with the same ``session`` value (within a workspace) share
     message history and scratchpad.  They always run sequentially.
+    Standalone questions can run in parallel via ``workers``.
     """
     # Group session questions; standalone questions run independently.
     session_groups: dict[tuple[str, str], list[tuple[str, Question]]] = {}
@@ -357,9 +359,24 @@ def _run_all(model: str, jobs: list[tuple[str, Question]]):
         else:
             standalone.append((workspace_name, question))
 
-    for workspace_name, question in standalone:
-        result = run_question(model, workspace_name, question)
-        yield workspace_name, question, result
+    if workers <= 1:
+        for workspace_name, question in standalone:
+            result = run_question(model, workspace_name, question)
+            yield workspace_name, question, result
+    else:
+        print(
+            f"Running {len(standalone)} standalone questions with {workers} workers\n",
+            flush=True,
+        )
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {}
+            for workspace_name, question in standalone:
+                future = pool.submit(run_question, model, workspace_name, question)
+                futures[future] = (workspace_name, question)
+            for future in as_completed(futures):
+                workspace_name, question = futures[future]
+                yield workspace_name, question, future.result()
+
     for (_ws, _sess), group in session_groups.items():
         questions = [q for _, q in group]
         yield from _run_session(model, _ws, questions)
@@ -408,7 +425,7 @@ def main() -> None:
     results: list[EvalResult] = []
 
     for completed, (workspace_name, question, result) in enumerate(
-        _run_all(model, jobs), 1
+        _run_all(model, jobs, args.workers), 1
     ):
         print(
             f"[{completed}/{total}] {workspace_name}: {question.text[:60]}...",
