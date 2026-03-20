@@ -321,7 +321,9 @@ def run_question(
     )
 
 
-def _run_session(model: str, workspace_name: str, questions: list[Question]):
+def _run_session(
+    model: str, workspace_name: str, questions: list[Question]
+) -> list[tuple[str, Question, EvalResult]]:
     """Run questions sequentially with shared message history and scratchpad."""
     workspace = (Path(__file__).parent.parent / "test-data" / workspace_name).resolve()
     system_prompt = build_system_prompt(
@@ -329,6 +331,7 @@ def _run_session(model: str, workspace_name: str, questions: list[Question]):
         workspace=workspace,
     )
     messages: list[Message] = [{"role": "system", "content": system_prompt}]
+    results: list[tuple[str, Question, EvalResult]] = []
     with tempfile.TemporaryDirectory(prefix="lh-scratch-") as scratch:
         scratch_dir = Path(scratch)
         for question in questions:
@@ -339,54 +342,45 @@ def _run_session(model: str, workspace_name: str, questions: list[Question]):
                 messages=messages,
                 scratch_dir=scratch_dir,
             )
-            yield workspace_name, question, result
+            results.append((workspace_name, question, result))
+    return results
 
 
-def _run_all(model: str, jobs: list[tuple[str, Question]], workers: int):
-    """Yield (workspace_name, question, result) for each completed job.
-
-    Questions with the same ``session`` value (within a workspace) share
-    message history and scratchpad.  They always run sequentially.
-    Standalone questions can run in parallel via ``workers``.
-    """
-    # Group session questions; standalone questions run independently.
-    session_groups: dict[tuple[str, str], list[tuple[str, Question]]] = {}
-    standalone: list[tuple[str, Question]] = []
+def _group_sessions(
+    jobs: list[tuple[str, Question]],
+) -> list[tuple[str, list[Question]]]:
+    """Group jobs into sessions. Standalone questions become single-question sessions."""
+    groups: dict[tuple[str, str], list[Question]] = {}
+    standalone_idx = 0
     for workspace_name, question in jobs:
         if question.session:
             key = (workspace_name, question.session)
-            session_groups.setdefault(key, []).append((workspace_name, question))
         else:
-            standalone.append((workspace_name, question))
+            key = (workspace_name, f"__standalone_{standalone_idx}")
+            standalone_idx += 1
+        groups.setdefault(key, []).append(question)
 
-    if workers <= 1:
-        for workspace_name, question in standalone:
-            result = run_question(model, workspace_name, question)
-            yield workspace_name, question, result
-    else:
-        print(
-            f"Running {len(standalone)} standalone questions with {workers} workers\n",
-            flush=True,
-        )
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {}
-            for workspace_name, question in standalone:
-                future = pool.submit(run_question, model, workspace_name, question)
-                futures[future] = (workspace_name, question)
-            for future in as_completed(futures):
-                workspace_name, question = futures[future]
-                yield workspace_name, question, future.result()
+    return [(ws, questions) for (ws, _), questions in groups.items()]
 
-    for (_ws, _sess), group in session_groups.items():
-        questions = [q for _, q in group]
-        yield from _run_session(model, _ws, questions)
+
+def _run_all(model: str, jobs: list[tuple[str, Question]]):
+    """Yield (workspace_name, question, result) for each completed job.
+
+    Every question group is a session — standalone questions are sessions of
+    one.  Each session gets its own worker so all sessions run concurrently.
+    """
+    sessions = _group_sessions(jobs)
+    with ThreadPoolExecutor(max_workers=len(sessions)) as pool:
+        futures = {
+            pool.submit(_run_session, model, ws, questions): (ws, questions)
+            for ws, questions in sessions
+        }
+        for future in as_completed(futures):
+            yield from future.result()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect agent traces")
-    parser.add_argument(
-        "--workers", type=int, default=1, help="Number of parallel workers (default: 1)"
-    )
     parser.add_argument(
         "--filter",
         nargs="+",
@@ -425,7 +419,7 @@ def main() -> None:
     results: list[EvalResult] = []
 
     for completed, (workspace_name, question, result) in enumerate(
-        _run_all(model, jobs, args.workers), 1
+        _run_all(model, jobs), 1
     ):
         print(
             f"[{completed}/{total}] {workspace_name}: {question.text[:60]}...",
