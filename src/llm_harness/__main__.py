@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
 import litellm
@@ -49,33 +50,36 @@ def main() -> None:
 
     print_header(model)
 
-    while True:
-        try:
-            user_input = console.input("[bold]you>[/bold] ").strip()
-        except (EOFError, KeyboardInterrupt):
-            console.print()
-            break
+    with tempfile.TemporaryDirectory(prefix="lh-scratch-") as scratch:
+        scratch_dir = Path(scratch)
+        while True:
+            try:
+                user_input = console.input("[bold]you>[/bold] ").strip()
+            except (EOFError, KeyboardInterrupt):
+                console.print()
+                break
 
-        if not user_input:
-            continue
-        if user_input.lower() in ("quit", "exit"):
-            break
+            if not user_input:
+                continue
+            if user_input.lower() in ("quit", "exit"):
+                break
 
-        messages.append({"role": "user", "content": user_input})
+            messages.append({"role": "user", "content": user_input})
 
-        try:
-            agent_run = run_agent_loop(
-                model=model,
-                messages=messages,
-                tools=TOOL_DEFINITIONS,
-                completion=litellm.completion,
-                workspace=workspace,
-            )
-            for event in agent_run:
-                display_event(event)
-        except Exception as exc:
-            messages.pop()
-            print_error(str(exc))
+            try:
+                agent_run = run_agent_loop(
+                    model=model,
+                    messages=messages,
+                    tools=TOOL_DEFINITIONS,
+                    completion=litellm.completion,
+                    workspace=workspace,
+                    scratch_dir=scratch_dir,
+                )
+                for event in agent_run:
+                    display_event(event)
+            except Exception as exc:
+                messages.pop()
+                print_error(str(exc))
 
 
 if __name__ == "__main__":
