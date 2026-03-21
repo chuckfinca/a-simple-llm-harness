@@ -65,11 +65,11 @@ def _render_user(content: str) -> str:
 
 
 def _render_assistant_text(content: str) -> str:
-    return (
-        f"<div style='margin:6px 0;'>"
-        f"{_styled('#483', '[assistant]')} ({len(content)} chars)"
-        f"<div style='margin:4px 0 8px 16px;"
-        f"white-space:pre-wrap;'>{escape(content)}</div></div>"
+    return _collapsible(
+        f"{_styled('#483', '[assistant]')} ({len(content)} chars)",
+        f"<div style='white-space:pre-wrap;'>{escape(content)}</div>",
+        open_=True,
+        raw=True,
     )
 
 
@@ -80,21 +80,19 @@ def _render_tool_call(fn: dict) -> str:
         args = {}
 
     if fn["name"] == "run_python" and "code" in args:
-        return (
-            f"<div style='margin:4px 0;'>"
-            f"{_styled('#483', '[assistant]')} calls "
-            f"<code>{escape(fn['name'])}</code>"
-            f"<pre style='margin:2px 0 4px 16px;font-size:12px;"
-            f"background:#f6f6f6;padding:8px;"
-            f"border-radius:4px;'>{escape(args['code'])}</pre></div>"
+        return _collapsible(
+            f"{_styled('#483', '[assistant]')} calls <code>{escape(fn['name'])}</code>",
+            f"<pre style='font-size:12px;background:#f6f6f6;padding:8px;"
+            f"border-radius:4px;'>{escape(args['code'])}</pre>",
+            open_=True,
+            raw=True,
         )
 
-    return (
-        f"<div style='margin:4px 0;'>"
-        f"{_styled('#483', '[assistant]')} calls "
-        f"<code>{escape(fn['name'])}</code>"
-        f"<pre style='margin:2px 0 4px 16px;"
-        f"font-size:12px;'>{escape(_format_json(fn['arguments']))}</pre></div>"
+    return _collapsible(
+        f"{_styled('#483', '[assistant]')} calls <code>{escape(fn['name'])}</code>",
+        f"<pre style='font-size:12px;'>{escape(_format_json(fn['arguments']))}</pre>",
+        open_=True,
+        raw=True,
     )
 
 
