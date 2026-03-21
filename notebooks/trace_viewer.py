@@ -101,44 +101,8 @@ def _render_tools(tools: list[dict]) -> str:
     )
 
 
-def _render_cached(messages: list[dict], tools: list[dict] | None = None) -> str:
-    if not messages and not tools:
-        return ""
-    summary_parts = []
-    if messages:
-        summary_parts.append(f"{len(messages)} cached messages")
-    if tools:
-        summary_parts.append(f"{len(tools)} tool defs")
-
-    lines = []
-    if tools:
-        lines.append(f"[tools] {', '.join(_tool_def_names(tools))}")
-    for m in messages:
-        role = m["role"]
-        content = m.get("content") or ""
-        tool_calls = m.get("tool_calls", [])
-        if role == "system":
-            lines.append(f"[system] ({len(content)} chars)")
-        elif role == "user":
-            lines.append(f"[user] {content[:100]}")
-        elif role == "assistant":
-            if tool_calls:
-                names = ", ".join(tc["function"]["name"] for tc in tool_calls)
-                lines.append(f"[assistant] calls {names}")
-            else:
-                lines.append(f"[assistant] ({len(content)} chars)")
-        elif role == "tool":
-            lines.append(f"[tool result] ({len(content)} chars)")
-
-    return _collapsible(
-        f"<span style='color:#888;font-size:13px;'>{' + '.join(summary_parts)}</span>",
-        "\n".join(lines),
-    )
-
-
 def _render_system_message(content: str, max_chars: int | None) -> str:
     formatted = _format_json(content)
-    # System message is already collapsible — no need to truncate.
     return _collapsible(
         f"<span style='color:#888;'>[system]</span>"
         f" <span style='color:#888;font-size:12px;'>"
@@ -221,40 +185,22 @@ def _render_message(
     return renderer(m, max_chars, trace_tool_calls) if renderer else ""
 
 
-def _render_turn(
+def _render_turn_body(
     *,
-    turn_num: int,
     messages: list[dict],
     asst_idx: int,
     turn_end: int,
     prev_end: int,
-    tools: list[dict],
     tool_calls: list[dict],
     max_chars: int | None,
-    show_header: bool = True,
-    show_cached: bool = True,
 ) -> list[str]:
+    """Render user message, assistant action, and tool results for one turn."""
     parts = []
-    if show_header:
-        parts.append(
-            f"<div style='border-top:2px solid #ddd;margin-top:16px;"
-            f"padding-top:8px;'>"
-            f"<span style='font-size:13px;color:#888;'>"
-            f"Turn {turn_num}</span></div>"
-        )
-
-    if show_header and show_cached:
-        if prev_end == 0:
-            parts.append(_render_tools(tools))
-            parts.append(_render_cached(messages[:prev_end]))
-        else:
-            parts.append(_render_cached(messages[:prev_end], tools=tools))
-
     parts.extend(
         _render_message(messages[i], max_chars, tool_calls)
         for i in range(prev_end, asst_idx)
+        if messages[i]["role"] != "system"  # system shown at top
     )
-
     parts.append(
         "<div style='border-left:3px solid #483;padding-left:12px;margin:8px 0;'>"
     )
@@ -292,6 +238,94 @@ def _render_telemetry(turns: list[dict], wall_time_s: float) -> str:
     return _collapsible(
         "<span style='color:#888;font-size:13px;'>telemetry</span>",
         "\n".join(telem_lines),
+    )
+
+
+def _group_turns_by_question(
+    messages: list[dict], asst_indices: list[int]
+) -> list[tuple[str, list[tuple[int, int]]]]:
+    """Group assistant turn indices by their preceding user question.
+
+    Returns list of (question_text, [(asst_idx, turn_end), ...]).
+    """
+    groups: list[tuple[str, list[tuple[int, int]]]] = []
+    current_question = ""
+
+    for asst_idx in asst_indices:
+        # Find the most recent user message before this assistant turn
+        for j in range(asst_idx - 1, -1, -1):
+            if messages[j]["role"] == "user":
+                q = (messages[j].get("content") or "")[:80]
+                if q != current_question:
+                    current_question = q
+                    groups.append((current_question, []))
+                break
+
+        turn_end = asst_idx + 1
+        while turn_end < len(messages) and messages[turn_end]["role"] == "tool":
+            turn_end += 1
+
+        if groups:
+            groups[-1][1].append((asst_idx, turn_end))
+
+    return groups
+
+
+def _render_prior_session(
+    messages: list[dict],
+    prior_asst: list[int],
+    tool_calls: list[dict],
+    max_chars: int | None,
+) -> str:
+    """Render prior session turns as nested collapsibles grouped by question."""
+    question_groups = _group_turns_by_question(messages, prior_asst)
+    prior_inner = []
+    global_turn = 0
+    for question_text, turn_pairs in question_groups:
+        q_turns = []
+        prev = turn_pairs[0][0]
+        for j in range(prev - 1, -1, -1):
+            if messages[j]["role"] == "user":
+                prev = j
+                break
+        for asst_idx, turn_end in turn_pairs:
+            global_turn += 1
+            body = "\n".join(
+                _render_turn_body(
+                    messages=messages,
+                    asst_idx=asst_idx,
+                    turn_end=turn_end,
+                    prev_end=prev,
+                    tool_calls=tool_calls,
+                    max_chars=max_chars,
+                )
+            )
+            q_turns.append(
+                _collapsible(
+                    f"<span style='color:#888;font-size:13px;'>"
+                    f"Turn {global_turn}</span>",
+                    body,
+                    raw_html=True,
+                )
+            )
+            prev = turn_end
+
+        label = f"{question_text}..." if len(question_text) == 80 else question_text
+        prior_inner.append(
+            _collapsible(
+                f"<span style='color:#888;font-size:13px;'>"
+                f"{escape(label)}"
+                f" ({len(turn_pairs)} turns)</span>",
+                "\n".join(q_turns),
+                raw_html=True,
+            )
+        )
+
+    return _collapsible(
+        f"<span style='color:#888;font-size:13px;'>"
+        f"{len(prior_asst)} cached turns from session</span>",
+        "\n".join(prior_inner),
+        raw_html=True,
     )
 
 
@@ -333,75 +367,62 @@ def show_trace(data: dict, max_chars: int | None = None) -> None:
             f"Error: {escape(inner['error'])}</div>"
         )
 
-    if messages:
-        offset = inner.get("message_offset", 0)
-        all_asst = [i for i, m in enumerate(messages) if m["role"] == "assistant"]
-
-        # Split into prior (before offset) and own (from offset onward)
-        prior_asst = [i for i in all_asst if i < offset]
-        own_asst = [i for i in all_asst if i >= offset]
-
-        # Render prior session turns as nested collapsibles
-        if prior_asst:
-            prior_parts = []
-            prev = 0
-            for pt_num, pt_idx in enumerate(prior_asst, 1):
-                pt_end = pt_idx + 1
-                while pt_end < len(messages) and messages[pt_end]["role"] == "tool":
-                    pt_end += 1
-                turn_html = "\n".join(
-                    _render_turn(
-                        turn_num=pt_num,
-                        messages=messages,
-                        asst_idx=pt_idx,
-                        turn_end=pt_end,
-                        prev_end=prev,
-                        tools=tools,
-                        tool_calls=tool_calls,
-                        max_chars=max_chars,
-                        show_header=False,
-                    )
-                )
-                prior_parts.append(
-                    _collapsible(
-                        f"<span style='color:#888;font-size:13px;'>Turn {pt_num}</span>",
-                        turn_html,
-                        raw_html=True,
-                    )
-                )
-                prev = pt_end
-            parts.append(
-                _collapsible(
-                    f"<span style='color:#888;font-size:13px;'>"
-                    f"{len(prior_asst)} prior turns from session</span>",
-                    "\n".join(prior_parts),
-                    raw_html=True,
-                )
-            )
-
-        # Render this question's turns.
-        has_prior = len(prior_asst) > 0
-        turn_offset = len(prior_asst)
-        prev_end = offset
-        for i, (turn_num, asst_idx) in enumerate(enumerate(own_asst, turn_offset + 1)):
-            turn_end = asst_idx + 1
-            while turn_end < len(messages) and messages[turn_end]["role"] == "tool":
-                turn_end += 1
-            parts.extend(
-                _render_turn(
-                    turn_num=turn_num,
-                    messages=messages,
-                    asst_idx=asst_idx,
-                    turn_end=turn_end,
-                    prev_end=prev_end,
-                    tools=tools,
-                    tool_calls=tool_calls,
-                    max_chars=max_chars,
-                    show_cached=not (i == 0 and has_prior),
-                )
-            )
-            prev_end = turn_end
-    else:
+    if not messages:
         parts.append("<div style='color:#888;'>No messages in trace</div>")
+        display(HTML("\n".join(parts)))
+        return
+
+    offset = inner.get("message_offset", 0)
+    all_asst = [i for i, m in enumerate(messages) if m["role"] == "assistant"]
+    prior_asst = [i for i in all_asst if i < offset]
+    own_asst = [i for i in all_asst if i >= offset]
+
+    # System message and tools shown once at top, outside turns
+    if messages and messages[0]["role"] == "system":
+        parts.append(_render_system_message(messages[0].get("content") or "", None))
+    if tools:
+        parts.append(_render_tools(tools))
+
+    # Prior session turns (cached, grouped by question)
+    if prior_asst:
+        parts.append(_render_prior_session(messages, prior_asst, tool_calls, max_chars))
+
+    # This question's turns (collapsible, open by default)
+    turn_offset = len(prior_asst)
+    prev_end = offset
+    for i, asst_idx in enumerate(own_asst):
+        turn_num = turn_offset + i + 1
+        turn_end = asst_idx + 1
+        while turn_end < len(messages) and messages[turn_end]["role"] == "tool":
+            turn_end += 1
+
+        body = "\n".join(
+            _render_turn_body(
+                messages=messages,
+                asst_idx=asst_idx,
+                turn_end=turn_end,
+                prev_end=prev_end,
+                tool_calls=tool_calls,
+                max_chars=max_chars,
+            )
+        )
+        parts.append(
+            _collapsible(
+                f"<span style='color:#888;font-size:13px;'>Turn {turn_num}</span>",
+                body,
+                open_=True,
+                raw_html=True,
+            )
+        )
+        prev_end = turn_end
+
+    # Raw messages JSON for prompt debugging
+    raw_json = json.dumps(messages, indent=2, default=str)
+    parts.append(
+        _collapsible(
+            "<span style='color:#888;font-size:13px;'>raw messages JSON</span>",
+            raw_json,
+        )
+    )
 
     display(HTML("\n".join(parts)))
