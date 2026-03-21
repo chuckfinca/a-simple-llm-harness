@@ -266,19 +266,13 @@ def _build_conversation(messages: list[dict]) -> list[dict]:
 def _render_question_block(
     messages: list[dict],
     question: dict,
-    turn_offset: int,
     max_chars: int | None,
     open_: bool = True,
-) -> tuple[str, int]:
-    """Render a question block. Returns (html, number_of_turns)."""
-    turn_parts = []
-    for local_num, turn in enumerate(question["turns"]):
-        global_num = turn_offset + local_num + 1
-        asst_idx = turn["asst_idx"]
-        asst_msg = messages[asst_idx]
-
-        # Render assistant message + tool results
-        inner_parts = []
+) -> str:
+    """Render a question block: user message header with assistant/tool messages inside."""
+    inner_parts = []
+    for turn in question["turns"]:
+        asst_msg = messages[turn["asst_idx"]]
         inner_parts.append(
             "<div style='border-left:3px solid #483;padding-left:12px;margin:4px 0;'>"
         )
@@ -289,44 +283,18 @@ def _render_question_block(
         )
         inner_parts.append("</div>")
 
-        # Make a summary for the turn collapsible
-        tool_calls = asst_msg.get("tool_calls", [])
-        if tool_calls:
-            fn_names = ", ".join(tc["function"]["name"] for tc in tool_calls)
-            turn_summary = f"calls {fn_names}"
-        else:
-            content = asst_msg.get("content") or ""
-            turn_summary = f"response ({len(content)} chars)"
-
-        turn_parts.append(
-            _collapsible(
-                f"<span style='color:#888;font-size:13px;'>"
-                f"Turn {global_num}: {turn_summary}</span>",
-                "\n".join(inner_parts),
-                open_=open_,
-                raw=True,
-            )
-        )
-
-    # User message as question header
-    user_text = question["text"]
-    label = f"{user_text}..." if len(user_text) == 100 else user_text
-    n_turns = len(question["turns"])
-    turn_info = f" ({n_turns} turn{'s' if n_turns != 1 else ''})"
-
+    user_content = messages[question["idx"]].get("content") or ""
     body = (
-        "\n".join(turn_parts)
-        if turn_parts
+        "\n".join(inner_parts)
+        if inner_parts
         else "<div style='color:#888;'>(no response)</div>"
     )
-    html = _collapsible(
-        f"{_styled('#36a', '[user]')} {escape(label)}"
-        f"<span style='color:#888;font-size:12px;'>{turn_info}</span>",
+    return _collapsible(
+        f"{_styled('#36a', '[user]')} {escape(user_content)}",
         body,
         open_=open_,
         raw=True,
     )
-    return html, n_turns
 
 
 # ---------------------------------------------------------------------------
@@ -409,34 +377,25 @@ def show_trace(data: dict, max_chars: int | None = None) -> None:
     # Prior session questions (cached, collapsed)
     prior_questions = [b for b in prior_blocks if b["type"] == "question"]
     if prior_questions:
-        prior_parts = []
-        turn_count = 0
-        for q in prior_questions:
-            html, n = _render_question_block(
-                messages, q, turn_count, max_chars, open_=False
-            )
-            prior_parts.append(html)
-            turn_count += n
-
-        total_prior_turns = sum(len(q["turns"]) for q in prior_questions)
+        prior_parts = [
+            _render_question_block(messages, q, max_chars, open_=False)
+            for q in prior_questions
+        ]
         parts.append(
             _collapsible(
                 f"<span style='color:#888;font-size:13px;'>"
-                f"{total_prior_turns} cached turns from session "
-                f"({len(prior_questions)} questions)</span>",
+                f"cached session context ({len(prior_questions)} questions)</span>",
                 "\n".join(prior_parts),
                 raw=True,
             )
         )
-    else:
-        turn_count = 0
 
     # This question's blocks (open)
     own_questions = [b for b in own_blocks if b["type"] == "question"]
-    for q in own_questions:
-        html, n = _render_question_block(messages, q, turn_count, max_chars, open_=True)
-        parts.append(html)
-        turn_count += n
+    parts.extend(
+        _render_question_block(messages, q, max_chars, open_=True)
+        for q in own_questions
+    )
 
     # Raw messages JSON
     raw_json = json.dumps(messages, indent=2, default=str)
