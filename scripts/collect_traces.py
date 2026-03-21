@@ -291,6 +291,7 @@ def run_question(
         )
         messages = [{"role": "system", "content": system_prompt}]
 
+    message_offset = len(messages)
     messages.append({"role": "user", "content": question.text})
 
     start = time.monotonic()
@@ -310,6 +311,7 @@ def run_question(
         agent_run.trace.error = str(exc)
 
     agent_run.trace.wall_time_s = round(time.monotonic() - start, 2)
+    agent_run.trace.message_offset = message_offset
 
     assertions = evaluate_assertions(agent_run.trace, question)
     return EvalResult(
