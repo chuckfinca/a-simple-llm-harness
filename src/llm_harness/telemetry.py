@@ -15,6 +15,8 @@ class Turn:
     cached_tokens: int = 0
     latency_s: float = 0.0
     cost: float | None = None
+    finish_reason: str = ""
+    response_model: str = ""
 
 
 @dataclass

@@ -64,24 +64,58 @@ def _render_user(content: str) -> str:
     )
 
 
-def _render_assistant_text(content: str) -> str:
+def _turn_meta_html(turn: dict | None) -> str:
+    if not turn:
+        return ""
+    parts = []
+    prompt = turn.get("prompt_tokens", 0)
+    comp = turn.get("completion_tokens", 0)
+    cached = turn.get("cached_tokens", 0)
+    latency = turn.get("latency_s", 0)
+    cost = turn.get("cost")
+    finish = turn.get("finish_reason", "")
+    resp_model = turn.get("response_model", "")
+
+    token_info = f"{prompt} in"
+    if cached:
+        token_info += f" ({cached} cached)"
+    token_info += f" → {comp} out"
+    parts.append(token_info)
+    parts.append(f"{latency}s")
+    if cost:
+        parts.append(f"${cost:.4f}")
+    if finish:
+        parts.append(finish)
+    if resp_model:
+        parts.append(resp_model)
+    return (
+        f"<span style='color:#999;font-size:11px;margin-left:8px;'>"
+        f"{' · '.join(parts)}</span>"
+    )
+
+
+def _render_assistant_text(content: str, turn: dict | None = None) -> str:
+    meta = _turn_meta_html(turn)
     return _collapsible(
-        f"{_styled('#483', '[assistant]')} ({len(content)} chars)",
+        f"{_styled('#483', '[assistant]')} ({len(content)} chars){meta}",
         f"<div style='white-space:pre-wrap;'>{escape(content)}</div>",
         open_=True,
         raw=True,
     )
 
 
-def _render_tool_call(fn: dict) -> str:
+def _render_tool_call(fn: dict, turn: dict | None = None) -> str:
     try:
         args = json.loads(fn["arguments"])
     except (json.JSONDecodeError, TypeError):
         args = {}
 
+    meta = _turn_meta_html(turn)
+
     if fn["name"] == "run_python" and "code" in args:
         return _collapsible(
-            f"{_styled('#483', '[assistant]')} calls <code>{escape(fn['name'])}</code>",
+            f"{_styled('#483', '[assistant]')} calls "
+            f"<code>{escape(fn['name'])}</code>{meta}",
             f"<pre style='font-size:12px;background:#f6f6f6;padding:8px;"
             f"border-radius:4px;'>{escape(args['code'])}</pre>",
             open_=True,
@@ -89,17 +123,20 @@ def _render_tool_call(fn: dict) -> str:
         )
 
     return _collapsible(
-        f"{_styled('#483', '[assistant]')} calls <code>{escape(fn['name'])}</code>",
+        f"{_styled('#483', '[assistant]')} calls "
+        f"<code>{escape(fn['name'])}</code>{meta}",
         f"<pre style='font-size:12px;'>{escape(_format_json(fn['arguments']))}</pre>",
         open_=True,
         raw=True,
     )
 
 
-def _render_assistant(content: str, tool_calls: list[dict]) -> str:
+def _render_assistant(
+    content: str, tool_calls: list[dict], turn: dict | None = None
+) -> str:
     if tool_calls:
-        return "\n".join(_render_tool_call(tc["function"]) for tc in tool_calls)
-    return _render_assistant_text(content)
+        return "\n".join(_render_tool_call(tc["function"], turn) for tc in tool_calls)
+    return _render_assistant_text(content, turn)
 
 
 def _render_tool_result(content: str, max_chars: int | None) -> str:
@@ -145,7 +182,9 @@ def _render_tool_result(content: str, max_chars: int | None) -> str:
     )
 
 
-def _render_message(msg: dict, max_chars: int | None = None) -> str:
+def _render_message(
+    msg: dict, max_chars: int | None = None, turn: dict | None = None
+) -> str:
     role = msg["role"]
     content = msg.get("content") or ""
     if role == "system":
@@ -153,7 +192,7 @@ def _render_message(msg: dict, max_chars: int | None = None) -> str:
     if role == "user":
         return _render_user(content)
     if role == "assistant":
-        return _render_assistant(content, msg.get("tool_calls", []))
+        return _render_assistant(content, msg.get("tool_calls", []), turn)
     if role == "tool":
         return _render_tool_result(content, max_chars)
     return ""
@@ -265,16 +304,19 @@ def _render_question_block(
     messages: list[dict],
     question: dict,
     max_chars: int | None,
+    asst_to_turn: dict[int, dict] | None = None,
     open_: bool = True,
 ) -> str:
     """Render a question block: user message header with assistant/tool messages inside."""
     inner_parts = []
     for turn in question["turns"]:
-        asst_msg = messages[turn["asst_idx"]]
+        asst_idx = turn["asst_idx"]
+        asst_msg = messages[asst_idx]
+        turn_meta = (asst_to_turn or {}).get(asst_idx)
         inner_parts.append(
             "<div style='border-left:3px solid #483;padding-left:12px;margin:4px 0;'>"
         )
-        inner_parts.append(_render_message(asst_msg, max_chars))
+        inner_parts.append(_render_message(asst_msg, max_chars, turn_meta))
         inner_parts.extend(
             _render_message(messages[tool_idx], max_chars)
             for tool_idx in turn["tool_indices"]
@@ -351,6 +393,35 @@ def show_trace(data: dict, max_chars: int | None = None) -> None:
     # Parse conversation structure
     blocks = _build_conversation(messages)
 
+    # Map assistant message indices to turn metadata.
+    # Turns are 1:1 with assistant messages in chronological order.
+    asst_indices = [i for i, m in enumerate(messages) if m["role"] == "assistant"]
+    turn_dicts = [
+        {
+            "prompt_tokens": t.get("prompt_tokens", 0),
+            "completion_tokens": t.get("completion_tokens", 0),
+            "cached_tokens": t.get("cached_tokens", 0),
+            "latency_s": t.get("latency_s", 0),
+            "cost": t.get("cost"),
+            "finish_reason": t.get("finish_reason", ""),
+            "response_model": t.get("response_model", ""),
+        }
+        if isinstance(t, dict)
+        else {
+            "prompt_tokens": getattr(t, "prompt_tokens", 0),
+            "completion_tokens": getattr(t, "completion_tokens", 0),
+            "cached_tokens": getattr(t, "cached_tokens", 0),
+            "latency_s": getattr(t, "latency_s", 0),
+            "cost": getattr(t, "cost", None),
+            "finish_reason": getattr(t, "finish_reason", ""),
+            "response_model": getattr(t, "response_model", ""),
+        }
+        for t in turns
+    ]
+    asst_to_turn: dict[int, dict] = dict(
+        zip(asst_indices[-len(turn_dicts) :], turn_dicts, strict=False)
+    )
+
     # Split into prior (before offset) and own (from offset onward)
     prior_blocks = [b for b in blocks if b.get("idx", 0) < offset]
     own_blocks = [b for b in blocks if b.get("idx", 0) >= offset]
@@ -376,7 +447,7 @@ def show_trace(data: dict, max_chars: int | None = None) -> None:
     prior_questions = [b for b in prior_blocks if b["type"] == "question"]
     if prior_questions:
         prior_parts = [
-            _render_question_block(messages, q, max_chars, open_=False)
+            _render_question_block(messages, q, max_chars, asst_to_turn, open_=False)
             for q in prior_questions
         ]
         parts.append(
@@ -391,7 +462,7 @@ def show_trace(data: dict, max_chars: int | None = None) -> None:
     # This question's blocks (open)
     own_questions = [b for b in own_blocks if b["type"] == "question"]
     parts.extend(
-        _render_question_block(messages, q, max_chars, open_=True)
+        _render_question_block(messages, q, max_chars, asst_to_turn, open_=True)
         for q in own_questions
     )
 

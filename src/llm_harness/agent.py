@@ -119,6 +119,8 @@ def _run_loop(
 
             prompt_tokens, completion_tokens, cached_tokens = _extract_usage(response)
             cost = _extract_cost(response)
+            finish_reason = getattr(response.choices[0], "finish_reason", "") or ""
+            response_model = getattr(response, "model", "") or ""
 
             trace.turns.append(
                 Turn(
@@ -127,6 +129,8 @@ def _run_loop(
                     cached_tokens=cached_tokens,
                     latency_s=round(elapsed, 2),
                     cost=cost,
+                    finish_reason=finish_reason,
+                    response_model=response_model,
                 )
             )
 
