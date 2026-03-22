@@ -90,29 +90,25 @@ def chat(
         scratch_dir=scratch_dir,
     )
 
-    response_parts: list[str] = []
+    tool_call_count = 0
     try:
         for event in agent_run:
             if isinstance(event, ToolCallEvent):
-                response_parts.append("*Running code...*\n")
-                yield (
-                    "\n".join(response_parts),
-                    workspace_path,
-                    scratch_path,
-                    session_cost,
-                )
+                tool_call_count += 1
+                status = f"*Exploring documents ({tool_call_count} tool calls)...*"
+                yield status, workspace_path, scratch_path, session_cost
             elif isinstance(event, ToolResultEvent):
                 continue
             else:
                 trace = agent_run.trace
-                if trace.answer:
-                    response_parts.append(trace.answer)
                 cost = trace.cost or 0
                 session_cost += cost
     except Exception as exc:
-        response_parts.append(f"\n\nError: {exc}")
+        yield f"Error: {exc}", workspace_path, scratch_path, session_cost
+        return
 
-    yield "\n".join(response_parts), workspace_path, scratch_path, session_cost
+    answer = agent_run.trace.answer or "(no answer)"
+    yield answer, workspace_path, scratch_path, session_cost
 
 
 def build_app() -> gr.Blocks:
