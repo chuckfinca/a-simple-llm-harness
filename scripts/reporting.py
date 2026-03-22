@@ -64,6 +64,7 @@ CSV_COLUMNS = [
     # Instruction following
     "used_tools",
     "used_scratchpad",
+    "scratchpad_files",
     "has_citations",
     "has_sources_section",
     "citation_count",
@@ -105,11 +106,12 @@ def _extract_instruction_metrics(result: EvalResult) -> dict[str, object]:
         if "characters omitted" in tc.get("result", "")
     )
 
-    used_scratchpad = bool(result.trace.scratch_files)
+    scratchpad_files = len(result.trace.scratch_files)
 
     return {
         "used_tools": used_tools,
-        "used_scratchpad": used_scratchpad,
+        "used_scratchpad": scratchpad_files > 0,
+        "scratchpad_files": scratchpad_files,
         "has_citations": has_citations,
         "has_sources_section": has_sources_section,
         "citation_count": citation_count,
