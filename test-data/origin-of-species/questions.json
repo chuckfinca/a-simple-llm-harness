@@ -1,0 +1,28 @@
+[
+  {
+    "text": "What does Darwin say about natural selection in Chapter 4?",
+    "category": "single_doc",
+    "must_contain": ["natural selection"]
+  },
+  {
+    "text": "How does Darwin explain the struggle for existence?",
+    "category": "single_doc",
+    "must_contain_any": ["geometrical", "geometric", "increase"]
+  },
+  {
+    "text": "What examples of variation under domestication does Darwin give?",
+    "category": "enumeration",
+    "must_contain_any": ["pigeon", "dog", "cattle", "horse", "sheep"]
+  },
+  {
+    "text": "How does Darwin's argument in Chapter 3 (struggle for existence) build the logical foundation for Chapter 4 (natural selection)? What would break in his theory if Chapter 3's claims were wrong?",
+    "category": "cross_reference",
+    "must_contain": ["struggle", "natural selection"],
+    "min_tool_calls": 2
+  },
+  {
+    "text": "What are the strongest objections Darwin anticipates to his theory, and how does he address each? Which of his rebuttals is weakest by modern standards?",
+    "category": "cited_analysis",
+    "min_tool_calls": 3
+  }
+]

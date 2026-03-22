@@ -20,10 +20,9 @@ from pathlib import Path
 import litellm
 from dotenv import load_dotenv
 from questions import (
-    QUESTIONS,
     Question,
     evaluate_assertions,
-    load_external_questions,
+    load_questions,
 )
 from reporting import (
     EvalResult,
@@ -169,7 +168,7 @@ def main() -> None:
     model_slug = slugify(model)
     traces_dir = Path(__file__).parent.parent / "traces" / model_slug
 
-    all_questions = {**QUESTIONS, **load_external_questions()}
+    all_questions = load_questions()
 
     jobs: list[tuple[str, Question]] = []
     for workspace_name, questions in all_questions.items():

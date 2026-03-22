@@ -1,0 +1,29 @@
+[
+  {
+    "text": "What is the population of Japan?",
+    "category": "single_fact",
+    "must_contain_any": ["123,201,945", "123.2 million", "123 million"]
+  },
+  {
+    "text": "Compare the economies of Brazil and Argentina.",
+    "category": "comparison",
+    "must_contain": ["brazil", "argentina"],
+    "min_tool_calls": 2
+  },
+  {
+    "text": "Which countries in the dataset are in Africa?",
+    "category": "enumeration",
+    "must_contain_any": ["nigeria", "kenya", "ghana", "egypt", "ethiopia"],
+    "min_tool_calls": 2
+  },
+  {
+    "text": "Which country in the dataset has the most surprising gap between its GDP and its human development indicators (life expectancy, literacy, infant mortality)? Cite the specific numbers.",
+    "category": "anomaly_detection",
+    "min_tool_calls": 3
+  },
+  {
+    "text": "Based on the economic and demographic data, which two countries in the dataset are most structurally similar despite being in different regions? What metrics support this?",
+    "category": "cross_reference",
+    "min_tool_calls": 3
+  }
+]

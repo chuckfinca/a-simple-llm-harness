@@ -36,16 +36,21 @@ uv run python scripts/collect_traces.py
 uv run python scripts/collect_traces.py --filter highest-revenue
 ```
 
-20 questions across 5 document corpora, measured with code-based assertions.
+Questions are defined in `test-data/<workspace>/questions.json`, measured
+with code-based assertions. Categories test general capabilities:
 
-| Category | Tests | Example |
+| Category | Capability | Example |
 |---|---|---|
 | `single_fact` | Look up one value | Amazon's net income in FY 2025 |
 | `single_doc` | Read one document | Federalist No. 10 on factions |
 | `multi_doc` | Synthesize across files | Highest revenue in dataset |
 | `comparison` | Compare two things | JPMorgan Chase vs UnitedHealth |
 | `enumeration` | Search and list | Countries in Africa |
-| `analysis` | Write analytical commentary | Occupancy trend for exec summary |
+| `cross_reference` | Find connections between data points | Tension between Federalist 10 and 51 |
+| `anomaly_detection` | Spot what's unusual | GDP vs human development outlier |
+| `trend_synthesis` | Describe trajectory with causes | Watson's evolving characterization of Holmes |
+| `cited_analysis` | Make claims and cite evidence | Darwin's weakest rebuttal by modern standards |
+| `analysis` | Open-ended analytical commentary | Occupancy trend for exec summary |
 
 Questions run independently by default. Questions in the same **session**
 share message history and scratchpad, so the model builds on prior

@@ -1,0 +1,28 @@
+[
+  {
+    "text": "What happens in \"A Scandal in Bohemia\"?",
+    "category": "single_doc",
+    "must_contain": ["irene adler"],
+    "must_contain_any": ["photograph", "king"]
+  },
+  {
+    "text": "How does Holmes solve the case in The Speckled Band?",
+    "category": "single_doc",
+    "must_contain_any": ["snake", "adder", "ventilator"]
+  },
+  {
+    "text": "What methods does Holmes use across the stories?",
+    "category": "multi_doc",
+    "min_tool_calls": 3
+  },
+  {
+    "text": "In which stories does Holmes's initial deduction turn out to be wrong or incomplete, forcing him to revise his theory? What pattern emerges about when his method fails?",
+    "category": "cross_reference",
+    "min_tool_calls": 3
+  },
+  {
+    "text": "Compare how Watson describes Holmes in the earliest stories versus the later ones. Does Watson's characterization of Holmes change, and if so, what does that suggest about their relationship?",
+    "category": "trend_synthesis",
+    "min_tool_calls": 3
+  }
+]

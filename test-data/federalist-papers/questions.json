@@ -1,0 +1,39 @@
+[
+  {
+    "text": "What does Federalist No. 10 argue about factions?",
+    "category": "single_doc",
+    "must_contain": ["madison", "faction"]
+  },
+  {
+    "text": "Which papers discuss the judiciary?",
+    "category": "enumeration",
+    "must_contain_any": ["78", "79", "80", "81"]
+  },
+  {
+    "text": "What are the main themes across the Federalist Papers?",
+    "category": "multi_doc",
+    "min_tool_calls": 3
+  },
+  {
+    "text": "What does Hamilton say about standing armies?",
+    "category": "single_doc",
+    "must_contain": ["hamilton"],
+    "must_contain_any": ["army", "armies", "military"]
+  },
+  {
+    "text": "How do Hamilton and Madison differ on federal power?",
+    "category": "comparison",
+    "must_contain": ["hamilton", "madison"]
+  },
+  {
+    "text": "What tension exists between Madison's argument in Federalist 10 and his argument in Federalist 51? How does he reconcile the role of factions across these two papers?",
+    "category": "cross_reference",
+    "must_contain": ["madison", "10", "51"],
+    "min_tool_calls": 2
+  },
+  {
+    "text": "Which author's position on executive power evolved most between their earlier and later papers? Cite specific passages showing the shift.",
+    "category": "anomaly_detection",
+    "min_tool_calls": 3
+  }
+]
