@@ -35,5 +35,10 @@
     "text": "Which author's position on executive power evolved most between their earlier and later papers? Cite specific passages showing the shift.",
     "category": "anomaly_detection",
     "min_tool_calls": 3
+  },
+  {
+    "text": "Trace how the argument for ratification evolves from the first paper to the last. Identify the 3-4 major rhetorical pivots where the authors shift strategy, citing the specific papers where each shift occurs.",
+    "category": "trend_synthesis",
+    "min_tool_calls": 5
   }
 ]

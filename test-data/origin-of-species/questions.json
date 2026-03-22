@@ -24,5 +24,10 @@
     "text": "What are the strongest objections Darwin anticipates to his theory, and how does he address each? Which of his rebuttals is weakest by modern standards?",
     "category": "cited_analysis",
     "min_tool_calls": 3
+  },
+  {
+    "text": "Build a catalog of every species or organism Darwin mentions across all chapters, noting which chapter each appears in and what argument it supports. Which organisms does he rely on most heavily, and why?",
+    "category": "enumeration",
+    "min_tool_calls": 5
   }
 ]

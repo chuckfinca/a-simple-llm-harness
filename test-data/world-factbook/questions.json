@@ -25,5 +25,10 @@
     "text": "Based on the economic and demographic data, which two countries in the dataset are most structurally similar despite being in different regions? What metrics support this?",
     "category": "cross_reference",
     "min_tool_calls": 3
+  },
+  {
+    "text": "For each country, compute a composite development score from the available metrics (GDP per capita, life expectancy, literacy rate, infant mortality). Rank the countries and identify which single metric is the best predictor of overall development. Show your methodology.",
+    "category": "anomaly_detection",
+    "min_tool_calls": 4
   }
 ]
