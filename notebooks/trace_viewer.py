@@ -342,8 +342,8 @@ def _render_question_block(
 # ---------------------------------------------------------------------------
 
 
-def show_trace(data: dict, max_chars: int | None = None) -> None:
-    """Render a full agent trace as HTML in Jupyter."""
+def render_trace(data: dict, max_chars: int | None = None) -> str:
+    """Render a full agent trace as an HTML string."""
     inner = data.get("trace", data)
     tool_calls = inner.get("tool_calls", [])
     messages = inner.get("messages", [])
@@ -387,8 +387,7 @@ def show_trace(data: dict, max_chars: int | None = None) -> None:
 
     if not messages:
         parts.append("<div style='color:#888;'>No messages in trace</div>")
-        display(HTML("\n".join(parts)))
-        return
+        return "\n".join(parts)
 
     # Parse conversation structure
     blocks = _build_conversation(messages)
@@ -475,4 +474,9 @@ def show_trace(data: dict, max_chars: int | None = None) -> None:
         )
     )
 
-    display(HTML("\n".join(parts)))
+    return "\n".join(parts)
+
+
+def show_trace(data: dict, max_chars: int | None = None) -> None:
+    """Render a full agent trace as HTML in Jupyter."""
+    display(HTML(render_trace(data, max_chars)))
