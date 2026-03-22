@@ -172,23 +172,30 @@ def chat(
 
 
 def build_app() -> gr.Blocks:
-    with gr.Blocks(title="Document Explorer") as demo:
+    with gr.Blocks(title="Document Explorer", theme=gr.themes.Soft()) as demo:
         gr.Markdown(
-            "# Document Explorer\nUpload documents and ask questions about them."
+            "# Document Explorer\n"
+            "Upload text or CSV files, then ask questions. "
+            "The model explores your documents by writing and running Python code."
         )
 
         workspace_state = gr.State("")
         scratch_state = gr.State("")
         cost_state = gr.State(0.0)
 
-        file_upload = gr.File(
-            label="Upload documents (text, CSV)",
-            file_count="multiple",
-            file_types=[".txt", ".csv", ".md", ".json"],
-        )
+        with gr.Accordion("Upload documents", open=True):
+            file_upload = gr.File(
+                label="Text, CSV, Markdown, or JSON files",
+                file_count="multiple",
+                file_types=[".txt", ".csv", ".md", ".json"],
+            )
 
-        chatbot = gr.Chatbot()
-        msg = gr.Textbox(placeholder="Ask a question about your documents...", label="")
+        chatbot = gr.Chatbot(height=500)
+        msg = gr.Textbox(
+            placeholder="Ask a question about your documents...",
+            label="",
+            show_label=False,
+        )
 
         with gr.Accordion("Trace", open=False):
             trace_display = gr.HTML("")
