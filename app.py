@@ -131,7 +131,7 @@ def build_app() -> gr.Blocks:
             file_types=[".txt", ".csv", ".md", ".json"],
         )
 
-        chatbot = gr.Chatbot(type="messages")
+        chatbot = gr.Chatbot()
         msg = gr.Textbox(placeholder="Ask a question about your documents...", label="")
 
         def respond(
