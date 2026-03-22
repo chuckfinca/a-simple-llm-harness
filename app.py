@@ -197,7 +197,7 @@ def build_app() -> gr.Blocks:
             show_label=False,
         )
 
-        with gr.Accordion("Trace", open=False):
+        with gr.Accordion("Trace", open=False, visible=False) as trace_accordion:
             trace_display = gr.HTML("")
 
         def respond(
@@ -213,7 +213,8 @@ def build_app() -> gr.Blocks:
                     *history,
                     {"role": "assistant", "content": response},
                 ]
-                yield history_with_response, "", trace_html, wp, sp, sc
+                visible = gr.update(visible=bool(trace_html))
+                yield history_with_response, "", trace_html, visible, wp, sp, sc
 
         msg.submit(
             respond,
@@ -229,6 +230,7 @@ def build_app() -> gr.Blocks:
                 chatbot,
                 msg,
                 trace_display,
+                trace_accordion,
                 workspace_state,
                 scratch_state,
                 cost_state,
