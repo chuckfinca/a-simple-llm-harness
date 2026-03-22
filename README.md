@@ -15,6 +15,16 @@ uv run python -m llm_harness
 
 Requires Docker (the sandbox image builds automatically on first use).
 
+### Web interface
+
+Upload documents and ask questions in the browser:
+
+```
+uv run python app.py
+```
+
+Set `LH_ACCESS_TOKEN` in `.env` to require authentication.
+
 ## Architecture
 
 ```

@@ -19,6 +19,7 @@ module-name = "llm_harness"
 [dependency-groups]
 dev = [
     "beautifulsoup4>=4.12",
+    "gradio>=5.0",
     "jupyter>=1.1.1",
     "mypy>=1.19.1",
     "pandas>=3.0.1",
@@ -57,6 +58,7 @@ max-complexity = 12
 "tests/*" = ["S101"]
 "scripts/prepare_sec_eval.py" = ["S310"]
 "src/llm_harness/sandbox.py" = ["S603", "S607"]
+"app.py" = ["S603"]
 
 [tool.ruff.format]
 quote-style = "double"
