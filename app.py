@@ -54,8 +54,10 @@ def format_stats(trace: object) -> str:
     cached = trace.cached_tokens
     cache_str = f" ({cached} cached)" if cached else ""
     scratchpad = len(trace.scratch_files)
+    model_name = trace.model.split("/")[-1] if trace.model else ""
     stats = (
-        f"*{trace.prompt_tokens + trace.completion_tokens:,} tokens{cache_str}"
+        f"*{model_name}"
+        f" · {trace.prompt_tokens + trace.completion_tokens:,} tokens{cache_str}"
         f" · {len(trace.tool_calls)} tool calls"
         f" · {trace.wall_time_s:.1f}s"
         f" · {cost_str}"
