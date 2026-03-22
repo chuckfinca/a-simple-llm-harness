@@ -107,8 +107,23 @@ def chat(
         yield f"Error: {exc}", workspace_path, scratch_path, session_cost
         return
 
-    answer = agent_run.trace.answer or "(no answer)"
-    yield answer, workspace_path, scratch_path, session_cost
+    trace = agent_run.trace
+    answer = trace.answer or "(no answer)"
+    cost_str = f"${trace.cost:.4f}" if trace.cost else "n/a"
+    cached = trace.cached_tokens
+    cache_str = f" ({cached} cached)" if cached else ""
+    scratchpad = len(trace.scratch_files)
+    stats = (
+        f"*{trace.prompt_tokens + trace.completion_tokens:,} tokens{cache_str}"
+        f" · {len(trace.tool_calls)} tool calls"
+        f" · {trace.wall_time_s:.1f}s"
+        f" · {cost_str}"
+    )
+    if scratchpad:
+        stats += f" · {scratchpad} scratchpad files"
+    stats += "*"
+
+    yield f"{answer}\n\n---\n{stats}", workspace_path, scratch_path, session_cost
 
 
 def build_app() -> gr.Blocks:
