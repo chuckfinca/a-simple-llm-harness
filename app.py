@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -121,6 +122,7 @@ def chat(
     messages.append({"role": "user", "content": message})
 
     # Run agent loop and stream results
+    start = time.monotonic()
     agent_run = run_agent_loop(
         model=MODEL,
         messages=messages,
@@ -153,6 +155,7 @@ def chat(
         return
 
     trace = agent_run.trace
+    trace.wall_time_s = round(time.monotonic() - start, 2)
     answer = trace.answer or "(no answer)"
     stats = format_stats(trace)
     trace_html = build_trace_html(trace, message)
