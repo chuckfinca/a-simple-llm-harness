@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from llm_harness.sandbox import MAX_OUTPUT_CHARS
+from llm_harness.tools import MAX_OUTPUT_CHARS
 
 SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "system.md"
 

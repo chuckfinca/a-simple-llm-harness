@@ -7,6 +7,8 @@ from typing import Any
 from llm_harness.sandbox import run_python as _docker_run_python
 from llm_harness.types import SandboxFunc
 
+MAX_OUTPUT_CHARS = 4000
+
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
@@ -43,5 +45,18 @@ def execute_tool(
 
     if name == "run_python":
         fn = sandbox_fn or _docker_run_python
-        return fn(args.get("code", ""), workspace=workspace, scratch_dir=scratch_dir)
+        result = fn(args.get("code", ""), workspace=workspace, scratch_dir=scratch_dir)
+        result["stdout"] = _truncate(result["stdout"])
+        result["stderr"] = _truncate(result["stderr"])
+        return json.dumps(result)
     return json.dumps({"error": f"Unknown tool: {name}"})
+
+
+def _truncate(text: str) -> str:
+    if len(text) <= MAX_OUTPUT_CHARS:
+        return text
+    half = MAX_OUTPUT_CHARS // 2
+    omitted = len(text) - MAX_OUTPUT_CHARS
+    return (
+        text[:half] + f"\n\n... ({omitted} characters omitted) ...\n\n" + text[-half:]
+    )

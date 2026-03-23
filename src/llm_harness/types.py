@@ -40,6 +40,13 @@ class CompletionFunc(Protocol):
     ) -> Any: ...
 
 
+class SandboxResult(TypedDict):
+    stdout: str
+    stderr: str
+    exit_code: int
+    timed_out: bool
+
+
 class SandboxFunc(Protocol):
     def __call__(
         self,
@@ -47,7 +54,7 @@ class SandboxFunc(Protocol):
         *,
         workspace: Path | None = None,
         scratch_dir: Path | None = None,
-    ) -> str: ...
+    ) -> SandboxResult: ...
 
 
 @dataclass

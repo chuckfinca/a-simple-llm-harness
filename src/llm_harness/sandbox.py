@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import json
 import subprocess
 import tempfile
 import uuid
 from pathlib import Path
 
+from llm_harness.types import SandboxResult
+
 IMAGE_NAME = "llm-harness-sandbox"
 TIMEOUT_SECONDS = 30
-MAX_OUTPUT_CHARS = 4000
 CONTAINER_PREFIX = "lh-sandbox-"
 DOCKERFILE_DIR = Path(__file__).resolve().parent.parent.parent / "sandbox"
 
@@ -91,7 +91,7 @@ def run_python(
     workspace: Path | None = None,
     scratch_dir: Path | None = None,
     timeout: int = TIMEOUT_SECONDS,
-) -> str:
+) -> SandboxResult:
     ensure_sandbox_image()
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -115,30 +115,16 @@ def run_python(
                 command=["python", "/home/sandbox/script.py"],
                 timeout=timeout,
             )
-            return json.dumps(
-                {
-                    "stdout": _truncate(result.stdout),
-                    "stderr": _truncate(result.stderr),
-                    "exit_code": result.returncode,
-                    "timed_out": False,
-                }
-            )
+            return {
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "exit_code": result.returncode,
+                "timed_out": False,
+            }
         except subprocess.TimeoutExpired:
-            return json.dumps(
-                {
-                    "stdout": "",
-                    "stderr": "Execution timed out.",
-                    "exit_code": -1,
-                    "timed_out": True,
-                }
-            )
-
-
-def _truncate(text: str) -> str:
-    if len(text) <= MAX_OUTPUT_CHARS:
-        return text
-    half = MAX_OUTPUT_CHARS // 2
-    omitted = len(text) - MAX_OUTPUT_CHARS
-    return (
-        text[:half] + f"\n\n... ({omitted} characters omitted) ...\n\n" + text[-half:]
-    )
+            return {
+                "stdout": "",
+                "stderr": "Execution timed out.",
+                "exit_code": -1,
+                "timed_out": True,
+            }
