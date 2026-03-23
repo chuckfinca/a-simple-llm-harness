@@ -84,6 +84,62 @@ def _snapshot_scratch(scratch_dir: Path) -> dict[str, str]:
     return files
 
 
+def _record_turn(response: Any, elapsed: float, trace: Trace) -> None:
+    prompt_tokens, completion_tokens, cached_tokens = _extract_usage(response)
+    trace.turns.append(
+        Turn(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cached_tokens=cached_tokens,
+            latency_s=round(elapsed, 2),
+            cost=_extract_cost(response),
+            finish_reason=getattr(response.choices[0], "finish_reason", "") or "",
+            response_model=getattr(response, "model", "") or "",
+        )
+    )
+
+
+def _execute_tool_calls(
+    assistant_msg: Message,
+    *,
+    workspace: Path | None,
+    scratch_dir: Path,
+    sandbox_fn: SandboxFunc | None,
+    trace: Trace,
+    messages: list[Message],
+) -> Generator[AgentEvent, None, None]:
+    for tool_call in assistant_msg["tool_calls"]:
+        tool_function = tool_call["function"]
+        yield ToolCallEvent(
+            name=tool_function["name"],
+            arguments=tool_function["arguments"],
+        )
+
+        result = execute_tool(
+            tool_function["name"],
+            tool_function["arguments"],
+            workspace=workspace,
+            scratch_dir=scratch_dir,
+            sandbox_fn=sandbox_fn,
+        )
+        yield ToolResultEvent(name=tool_function["name"], result=result)
+
+        trace.tool_calls.append(
+            {
+                "name": tool_function["name"],
+                "arguments": tool_function["arguments"],
+                "result": result,
+            }
+        )
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": tool_call["id"],
+                "content": result,
+            }
+        )
+
+
 def _run_loop(
     *,
     model: str,
@@ -117,24 +173,7 @@ def _run_loop(
                 num_retries=2,
                 **completion_kwargs,
             )
-            elapsed = time.monotonic() - start
-
-            prompt_tokens, completion_tokens, cached_tokens = _extract_usage(response)
-            cost = _extract_cost(response)
-            finish_reason = getattr(response.choices[0], "finish_reason", "") or ""
-            response_model = getattr(response, "model", "") or ""
-
-            trace.turns.append(
-                Turn(
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    cached_tokens=cached_tokens,
-                    latency_s=round(elapsed, 2),
-                    cost=cost,
-                    finish_reason=finish_reason,
-                    response_model=response_model,
-                )
-            )
+            _record_turn(response, time.monotonic() - start, trace)
 
             assistant_msg = _parse_response_message(response)
             messages.append(assistant_msg)
@@ -144,41 +183,17 @@ def _run_loop(
                     nudged = True
                     messages.append(_NUDGE_MESSAGE)
                     continue
-
                 trace.answer = assistant_msg.get("content")
                 break
 
-            for tool_call in assistant_msg["tool_calls"]:
-                tool_function = tool_call["function"]
-                yield ToolCallEvent(
-                    name=tool_function["name"],
-                    arguments=tool_function["arguments"],
-                )
-
-                result = execute_tool(
-                    tool_function["name"],
-                    tool_function["arguments"],
-                    workspace=workspace,
-                    scratch_dir=active_scratch,
-                    sandbox_fn=sandbox_fn,
-                )
-                yield ToolResultEvent(name=tool_function["name"], result=result)
-
-                trace.tool_calls.append(
-                    {
-                        "name": tool_function["name"],
-                        "arguments": tool_function["arguments"],
-                        "result": result,
-                    }
-                )
-
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call["id"],
-                        "content": result,
-                    }
-                )
+            yield from _execute_tool_calls(
+                assistant_msg,
+                workspace=workspace,
+                scratch_dir=active_scratch,
+                sandbox_fn=sandbox_fn,
+                trace=trace,
+                messages=messages,
+            )
 
         yield ResponseEvent(
             content=trace.answer,
