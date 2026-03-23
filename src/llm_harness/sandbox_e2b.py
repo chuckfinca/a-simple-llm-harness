@@ -23,17 +23,23 @@ def get_or_create_sandbox(
     if _active_sandbox is not None:
         return _active_sandbox
 
-    _active_sandbox = Sandbox(timeout=300)
+    _active_sandbox = Sandbox.create(timeout=300)
 
-    # Create workspace and scratchpad directories
-    _active_sandbox.commands.run("mkdir -p /workspace /scratchpad")
+    # Create workspace and scratchpad directories in user-writable home
+    _active_sandbox.commands.run("mkdir -p /home/user/workspace /home/user/scratchpad")
+    # Symlink to expected paths
+    _active_sandbox.commands.run(
+        "ln -sf /home/user/workspace /workspace; "
+        "ln -sf /home/user/scratchpad /scratchpad",
+        user="root",
+    )
 
     # Upload workspace files
     if workspace is not None:
         for file_path in workspace.iterdir():
             if file_path.is_file():
                 _active_sandbox.files.write(
-                    f"/workspace/{file_path.name}",
+                    f"/home/user/workspace/{file_path.name}",
                     file_path.read_bytes(),
                 )
 
@@ -60,8 +66,14 @@ def run_python(
     try:
         execution = sandbox.run_code(code, timeout=timeout)
 
-        stdout = "\n".join(line.text for line in execution.logs.stdout)
-        stderr = "\n".join(line.text for line in execution.logs.stderr)
+        stdout = "\n".join(
+            line if isinstance(line, str) else line.text
+            for line in execution.logs.stdout
+        )
+        stderr = "\n".join(
+            line if isinstance(line, str) else line.text
+            for line in execution.logs.stderr
+        )
 
         if execution.error:
             stderr += f"\n{execution.error.name}: {execution.error.value}"
