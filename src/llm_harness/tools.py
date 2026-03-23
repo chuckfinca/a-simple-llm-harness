@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
-from llm_harness.sandbox import run_python
+if os.environ.get("E2B_API_KEY"):
+    from llm_harness.sandbox_e2b import run_python
+else:
+    from llm_harness.sandbox import run_python
 
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
