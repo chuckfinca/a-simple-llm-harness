@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol, TypedDict
 
 
@@ -37,6 +38,16 @@ class CompletionFunc(Protocol):
         tools: list[ToolDef],
         **kwargs: Any,
     ) -> Any: ...
+
+
+class SandboxFunc(Protocol):
+    def __call__(
+        self,
+        code: str,
+        *,
+        workspace: Path | None = None,
+        scratch_dir: Path | None = None,
+    ) -> str: ...
 
 
 @dataclass

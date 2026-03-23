@@ -1,14 +1,3 @@
----
-title: Document Explorer
-emoji: 📄
-colorFrom: blue
-colorTo: green
-sdk: gradio
-sdk_version: "6.9.0"
-app_file: app.py
-pinned: false
----
-
 # A Simple LLM Harness
 
 A minimal agent loop for exploring document workspaces with tool-calling LLMs.
@@ -25,16 +14,6 @@ uv run python -m llm_harness
 ```
 
 Requires Docker (the sandbox image builds automatically on first use).
-
-### Web interface
-
-Upload documents and ask questions in the browser:
-
-```
-uv run python app.py
-```
-
-Set `LH_ACCESS_TOKEN` in `.env` to require authentication.
 
 ## Architecture
 

@@ -13,6 +13,7 @@ from llm_harness.types import (
     CompletionFunc,
     Message,
     ResponseEvent,
+    SandboxFunc,
     ToolCallEvent,
     ToolDef,
     ToolResultEvent,
@@ -94,6 +95,7 @@ def _run_loop(
     trace: Trace,
     completion_kwargs: dict[str, Any],
     scratch_dir: Path | None = None,
+    sandbox_fn: SandboxFunc | None = None,
 ) -> Generator[AgentEvent, None, None]:
     completion_kwargs.setdefault(
         "cache_control_injection_points", _DEFAULT_CACHE_INJECTION
@@ -158,6 +160,7 @@ def _run_loop(
                     tool_function["arguments"],
                     workspace=workspace,
                     scratch_dir=active_scratch,
+                    sandbox_fn=sandbox_fn,
                 )
                 yield ToolResultEvent(name=tool_function["name"], result=result)
 
@@ -199,6 +202,7 @@ def run_agent_loop(
     completion: CompletionFunc,
     workspace: Path | None = None,
     scratch_dir: Path | None = None,
+    sandbox_fn: SandboxFunc | None = None,
     max_turns: int = 30,
     **completion_kwargs: Any,
 ) -> AgentRun:
@@ -212,6 +216,7 @@ def run_agent_loop(
         completion=completion,
         workspace=workspace,
         scratch_dir=scratch_dir,
+        sandbox_fn=sandbox_fn,
         max_turns=max_turns,
         trace=trace,
         completion_kwargs=completion_kwargs,

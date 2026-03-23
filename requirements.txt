@@ -1,4 +1,0 @@
-litellm>=1.60
-rich>=14
-e2b-code-interpreter>=2.5
-python-dotenv
