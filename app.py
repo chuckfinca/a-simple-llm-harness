@@ -19,7 +19,8 @@ import gradio as gr
 import litellm
 from dotenv import load_dotenv
 
-# Add notebooks/ to path so we can import trace_viewer
+# Add source paths so imports work both locally (via uv) and on HF Spaces
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 sys.path.insert(0, str(Path(__file__).parent / "notebooks"))
 
 from trace_viewer import render_trace
