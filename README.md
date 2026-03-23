@@ -25,6 +25,7 @@ src/llm_harness/
   tools.py        Tool definitions and dispatch
   prompt.py       System prompt assembly
   telemetry.py    Trace and turn dataclasses
+  trace_viewer.py Render traces as HTML
   types.py        Event types
   display.py      Terminal output
 ```
