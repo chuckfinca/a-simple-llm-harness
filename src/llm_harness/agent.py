@@ -14,6 +14,7 @@ from llm_harness.types import (
     Message,
     ResponseEvent,
     SandboxFunc,
+    TextDeltaEvent,
     ToolCallEvent,
     ToolDef,
     ToolResultEvent,
@@ -140,6 +141,27 @@ def _execute_tool_calls(
         )
 
 
+class StreamedCompletion:
+    """Iterate for text deltas, then access .response when done."""
+
+    def __init__(self, stream: Any) -> None:
+        self._stream = stream
+        self._chunks: list[Any] = []
+        self.response: Any = None
+
+    def __iter__(self) -> Generator[str, None, None]:
+        import litellm
+
+        for chunk in self._stream:
+            self._chunks.append(chunk)
+            delta = chunk.choices[0].delta
+            if delta.content:
+                yield delta.content
+        self.response = litellm.stream_chunk_builder(
+            self._chunks, messages=None
+        )
+
+
 def _run_loop(
     *,
     model: str,
@@ -152,6 +174,7 @@ def _run_loop(
     completion_kwargs: dict[str, Any],
     scratch_dir: Path | None = None,
     sandbox_fn: SandboxFunc | None = None,
+    stream: bool = False,
 ) -> Generator[AgentEvent, None, None]:
     completion_kwargs.setdefault(
         "cache_control_injection_points", _DEFAULT_CACHE_INJECTION
@@ -166,13 +189,30 @@ def _run_loop(
     try:
         for _ in range(max_turns):
             start = time.monotonic()
-            response = completion(
-                model=model,
-                messages=messages,
-                tools=tools,
-                num_retries=2,
-                **completion_kwargs,
-            )
+
+            if stream:
+                raw_stream = completion(
+                    model=model,
+                    messages=messages,
+                    tools=tools,
+                    stream=True,
+                    stream_options={"include_usage": True},
+                    num_retries=2,
+                    **completion_kwargs,
+                )
+                streamed = StreamedCompletion(raw_stream)
+                for text_delta in streamed:
+                    yield TextDeltaEvent(content=text_delta)
+                response = streamed.response
+            else:
+                response = completion(
+                    model=model,
+                    messages=messages,
+                    tools=tools,
+                    num_retries=2,
+                    **completion_kwargs,
+                )
+
             _record_turn(response, time.monotonic() - start, trace)
 
             assistant_msg = _parse_response_message(response)
@@ -219,6 +259,7 @@ def run_agent_loop(
     scratch_dir: Path | None = None,
     sandbox_fn: SandboxFunc | None = None,
     max_turns: int = 30,
+    stream: bool = False,
     **completion_kwargs: Any,
 ) -> AgentRun:
     trace = Trace(
@@ -235,5 +276,6 @@ def run_agent_loop(
         max_turns=max_turns,
         trace=trace,
         completion_kwargs=completion_kwargs,
+        stream=stream,
     )
     return AgentRun(events=events, trace=trace)

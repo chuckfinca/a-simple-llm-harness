@@ -70,6 +70,11 @@ class ToolResultEvent:
 
 
 @dataclass
+class TextDeltaEvent:
+    content: str
+
+
+@dataclass
 class ResponseEvent:
     content: str | None
     prompt_tokens: int
@@ -79,4 +84,4 @@ class ResponseEvent:
     cost: float | None
 
 
-AgentEvent = ToolCallEvent | ToolResultEvent | ResponseEvent
+AgentEvent = ToolCallEvent | ToolResultEvent | TextDeltaEvent | ResponseEvent
