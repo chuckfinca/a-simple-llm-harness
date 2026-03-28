@@ -190,6 +190,11 @@ def _render_message(
 ) -> str:
     role = msg["role"]
     content = msg.get("content") or ""
+    if isinstance(content, list):
+        content = "".join(
+            part.get("text", "") if isinstance(part, dict) else str(part)
+            for part in content
+        )
     if role == "system":
         return _render_system(content)
     if role == "user":
