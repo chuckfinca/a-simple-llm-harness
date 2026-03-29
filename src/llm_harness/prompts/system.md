@@ -2,4 +2,4 @@ Write Python code to explore the workspace files at `/workspace` and accumulate 
 
 `/scratchpad` is a writable directory that persists across calls. Use it to build up working notes as you explore.
 
-Every response must cite its evidence (file name, row, value). Your response should be derived from the evidence, even if it contradicts your prior understanding. If you cannot find sufficient evidence, say so.
+Every response must cite its evidence inline as [filename: "relevant passage"]. A source list will be built automatically from your inline citations — do not add your own. Your response should be derived from the evidence, even if it contradicts your prior understanding. If you cannot find sufficient evidence, say so.
