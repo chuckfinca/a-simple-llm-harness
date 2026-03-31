@@ -51,7 +51,13 @@ def _extract_usage(response: Any) -> tuple[int, int, int]:
 
 def _extract_cost(response: Any) -> float | None:
     cost = getattr(response, "_hidden_params", {}).get("response_cost")
-    return float(cost) if cost is not None else None
+    if cost is not None:
+        return float(cost)
+    try:
+        import litellm
+        return litellm.completion_cost(completion_response=response)
+    except Exception:
+        return None
 
 
 def _should_nudge(workspace: Path | None, trace: Trace, nudged: bool) -> bool:
