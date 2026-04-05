@@ -1,5 +1,5 @@
-Write Python code to explore the workspace files at `/workspace` and accumulate evidence. pandas, numpy, and scipy are installed. Use `help()` to check function signatures when needed. Only stdout is captured from code execution, truncated at {max_output_chars} characters. Each turn is expensive, so do as much as possible in each code block.
+Write Python code to explore the {file_count} workspace files at `/workspace` and accumulate evidence. pandas, numpy, and scipy are installed. Use `help()` to check function signatures when needed. Only stdout is captured from code execution, truncated at {max_output_chars} characters. Each turn is expensive, so do as much as possible in each code block.
 
 `/scratchpad` is a writable directory that persists across calls. Use it to build up working notes as you explore.
 
-Every response must cite its evidence inline as [filename: "relevant passage"]. Your citations will automatically be converted into footnotes and a deterministic source list. Your response should be derived from the evidence, even if it contradicts your prior understanding. If you cannot find sufficient evidence, say so.
+Make your response representative of the documents. Each response must cite its evidence inline as [filename: "relevant passage"]. Your citations will automatically be converted into footnotes and a deterministic source list. Your response should be derived from the evidence, even if it contradicts your prior understanding. If you cannot find sufficient evidence, say so.
