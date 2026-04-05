@@ -124,3 +124,11 @@ class TestProcessCitations:
         answer = 'Claim [ai-and-ml-services.md: "AI content."].'
         _, sources = process_citations(answer, workspace)
         assert sources[0]["doc"] == "ai and ml services"
+
+    def test_smart_quotes(self) -> None:
+        workspace = self._make_workspace({"facts.md": "Founded in 2013."})
+        answer = 'Claim [facts.md: \u201cFounded in 2013.\u201d].'
+        clean, sources = process_citations(answer, workspace)
+        assert "[" not in clean
+        assert len(sources) == 1
+        assert sources[0]["matched"] is True

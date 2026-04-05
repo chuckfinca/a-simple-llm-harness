@@ -11,9 +11,9 @@ import re
 from pathlib import Path
 
 _CITATION_RE = re.compile(
-    r'\[([^:\[\]]+):\s*("(?:[^"]*)"(?:\s*,\s*"(?:[^"]*)")*)\]'
+    r'\[([^:\[\]]+):\s*(["\u201c](?:[^"\u201d]*)["\u201d](?:\s*,\s*["\u201c](?:[^"\u201d]*)["\u201d])*)\]'
 )
-_QUOTES_RE = re.compile(r'"([^"]*)"')
+_QUOTES_RE = re.compile(r'["\u201c]([^"\u201d]*)["\u201d]')
 _SUPERSCRIPT_DIGITS = str.maketrans(
     "0123456789", "\u2070\u00b9\u00b2\u00b3\u2074\u2075\u2076\u2077\u2078\u2079"
 )
