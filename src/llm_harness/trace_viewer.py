@@ -225,13 +225,13 @@ def _render_message(
 
 def _render_telemetry(turns: list[dict[str, Any]], wall_time_s: float) -> str:
     lines = []
-    for i, t in enumerate(turns, 1):
-        cached = t.get("cached_tokens", 0)
+    for i, turn in enumerate(turns, 1):
+        cached = turn.get("cached_tokens", 0)
         cache_info = f" ({cached} cached)" if cached else ""
-        cost = f" | ${t['cost']:.4f}" if t.get("cost") else ""
+        cost = f" | ${turn['cost']:.4f}" if turn.get("cost") else ""
         lines.append(
-            f"Turn {i}: {t['prompt_tokens']} in{cache_info}, "
-            f"{t['completion_tokens']} out, {t['latency_s']}s{cost}"
+            f"Turn {i}: {turn['prompt_tokens']} in{cache_info}, "
+            f"{turn['completion_tokens']} out, {turn['latency_s']}s{cost}"
         )
 
     model_time = sum(t.get("latency_s", 0) for t in turns)
