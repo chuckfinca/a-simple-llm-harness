@@ -52,6 +52,7 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory(prefix="lh-scratch-") as scratch:
         scratch_dir = Path(scratch)
+
         while True:
             try:
                 user_input = console.input("[bold]you>[/bold] ").strip()

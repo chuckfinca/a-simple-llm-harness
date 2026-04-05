@@ -85,14 +85,14 @@ class TestProcessCitations:
             "facts.md": "Swift expert.\nPython proficient."
         })
         answer = 'Skills [facts.md: "Swift expert.", "Python proficient."].'
-        clean, sources = process_citations(answer, workspace)
+        _, sources = process_citations(answer, workspace)
         assert len(sources) == 2
         assert all(s["matched"] for s in sources)
 
     def test_deduplication(self) -> None:
         workspace = self._make_workspace({"facts.md": "Founded in 2013."})
         answer = 'A [facts.md: "Founded in 2013."]. B [facts.md: "Founded in 2013."].'
-        clean, sources = process_citations(answer, workspace)
+        _, sources = process_citations(answer, workspace)
         assert len(sources) == 1
 
     def test_no_workspace(self) -> None:
@@ -109,18 +109,18 @@ class TestProcessCitations:
     def test_unmatched_quote(self) -> None:
         workspace = self._make_workspace({"facts.md": "Actual content."})
         answer = 'Claim [facts.md: "Nonexistent text."].'
-        clean, sources = process_citations(answer, workspace)
+        _, sources = process_citations(answer, workspace)
         assert len(sources) == 1
         assert sources[0]["matched"] is False
 
     def test_filename_without_extension(self) -> None:
         workspace = self._make_workspace({"facts.md": "Some fact."})
         answer = 'Claim [facts: "Some fact."].'
-        clean, sources = process_citations(answer, workspace)
+        _, sources = process_citations(answer, workspace)
         assert sources[0]["matched"] is True
 
     def test_doc_display_name(self) -> None:
         workspace = self._make_workspace({"ai-and-ml-services.md": "AI content."})
         answer = 'Claim [ai-and-ml-services.md: "AI content."].'
-        clean, sources = process_citations(answer, workspace)
+        _, sources = process_citations(answer, workspace)
         assert sources[0]["doc"] == "ai and ml services"

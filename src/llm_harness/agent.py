@@ -63,7 +63,7 @@ def _extract_cost(response: Any) -> float | None:
 def _should_nudge(workspace: Path | None, trace: Trace, nudged: bool) -> bool:
     """Without a nudge, models often answer from memory instead of exploring
     the workspace — producing ungrounded responses with no citations."""
-    return bool(workspace) and not trace.tool_calls and not already_nudged
+    return bool(workspace) and not trace.tool_calls and not nudged
 
 
 _NUDGE_MESSAGE: Message = {

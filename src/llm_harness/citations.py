@@ -83,8 +83,9 @@ def process_citations(
         line = None
         candidates = [filename, f"{filename}.md"]
         stem = Path(filename).stem
-        for sub in workspace.rglob(f"{stem}.*"):
-            candidates.append(str(sub.relative_to(workspace)))
+        candidates.extend(
+            str(sub.relative_to(workspace)) for sub in workspace.rglob(f"{stem}.*")
+        )
         for candidate in dict.fromkeys(candidates):
             filepath = workspace / candidate
             if filepath.is_file():

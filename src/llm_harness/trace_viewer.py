@@ -18,7 +18,7 @@ COLOR_SYSTEM = "#888"
 COLOR_USER = "#36a"
 COLOR_ASSISTANT = "#483"
 COLOR_TOOL_RESULT = "#986"
-COLOR_PASS = "#4a4"
+COLOR_OK = "#4a4"
 COLOR_FAIL = "#c44"
 COLOR_META = "#999"
 
@@ -255,7 +255,7 @@ def _render_assertions(assertions: dict[str, Any]) -> str:
     parts = []
     for name, ok in assertions.items():
         icon = "\u2713" if ok else "\u2717"
-        color = COLOR_PASS if ok else COLOR_FAIL
+        color = COLOR_OK if ok else COLOR_FAIL
         parts.append(f"<span style='color:{color};'>{icon}</span> {escape(name)}")
     return "&nbsp;&nbsp;".join(parts)
 
@@ -375,7 +375,7 @@ def render_trace(data: dict[str, Any], max_chars: int | None = None) -> str:
 
     # Header: badge + question + stats
     passed = data.get("passed", False)
-    badge_color = COLOR_PASS if passed else "#c44"
+    badge_color = COLOR_OK if passed else "#c44"
     badge_text = "PASS" if passed else "FAIL"
     parts.append(
         f"<div style='margin-bottom:12px;'>"
