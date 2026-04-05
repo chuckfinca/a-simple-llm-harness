@@ -81,7 +81,11 @@ def process_citations(
     def _resolve_quote(filename: str, quote: str) -> dict:
         matched = False
         line = None
-        for candidate in [filename, f"{filename}.md"]:
+        candidates = [filename, f"{filename}.md"]
+        stem = Path(filename).stem
+        for sub in workspace.rglob(f"{stem}.*"):
+            candidates.append(str(sub.relative_to(workspace)))
+        for candidate in dict.fromkeys(candidates):
             filepath = workspace / candidate
             if filepath.is_file():
                 try:
@@ -94,7 +98,7 @@ def process_citations(
                 except OSError:
                     pass
         return {
-            "doc": filename.replace(".md", "").replace("_", " ").replace("-", " "),
+            "doc": Path(filename).stem.replace("_", " ").replace("-", " "),
             "file": filename,
             "quote": quote,
             "line": line,
