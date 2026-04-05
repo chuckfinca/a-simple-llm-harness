@@ -11,6 +11,18 @@ from html import escape
 from typing import Any
 
 # ---------------------------------------------------------------------------
+# Trace viewer color scheme
+# ---------------------------------------------------------------------------
+
+COLOR_SYSTEM = "#888"
+COLOR_USER = "#36a"
+COLOR_ASSISTANT = "#483"
+COLOR_TOOL_RESULT = "#986"
+COLOR_PASS = "#4a4"
+COLOR_FAIL = "#c44"
+COLOR_META = "#999"
+
+# ---------------------------------------------------------------------------
 # Low-level formatting helpers
 # ---------------------------------------------------------------------------
 
@@ -54,7 +66,7 @@ def _styled(color: str, text: str, bold: bool = True) -> str:
 
 def _render_system(content: str) -> str:
     return _collapsible(
-        f"{_styled('#888', '[system]')} "
+        f"{_styled(COLOR_SYSTEM, '[system]')} "
         f"<span style='color:#888;font-size:12px;'>({len(content)} chars)</span>",
         _format_json(content),
     )
@@ -63,7 +75,7 @@ def _render_system(content: str) -> str:
 def _render_user(content: str) -> str:
     return (
         f"<div style='margin:6px 0;'>"
-        f"{_styled('#36a', '[user]')} {escape(content)}</div>"
+        f"{_styled(COLOR_USER, '[user]')} {escape(content)}</div>"
     )
 
 
@@ -100,7 +112,7 @@ def _turn_meta_html(turn: dict[str, Any] | None) -> str:
 def _render_assistant_text(content: str, turn: dict[str, Any] | None = None) -> str:
     meta = _turn_meta_html(turn)
     return _collapsible(
-        f"{_styled('#483', '[assistant]')} ({len(content)} chars){meta}",
+        f"{_styled(COLOR_ASSISTANT, '[assistant]')} ({len(content)} chars){meta}",
         f"<div style='white-space:pre-wrap;'>{escape(content)}</div>",
         open_=True,
         raw=True,
@@ -117,7 +129,7 @@ def _render_tool_call(fn: dict[str, Any], turn: dict[str, Any] | None = None) ->
 
     if fn["name"] == "run_python" and "code" in args:
         return _collapsible(
-            f"{_styled('#483', '[assistant]')} calls "
+            f"{_styled(COLOR_ASSISTANT, '[assistant]')} calls "
             f"<code>{escape(fn['name'])}</code>{meta}",
             f"<pre style='font-size:12px;background:#f6f6f6;padding:8px;"
             f"border-radius:4px;'>{escape(args['code'])}</pre>",
@@ -126,7 +138,7 @@ def _render_tool_call(fn: dict[str, Any], turn: dict[str, Any] | None = None) ->
         )
 
     return _collapsible(
-        f"{_styled('#483', '[assistant]')} calls "
+        f"{_styled(COLOR_ASSISTANT, '[assistant]')} calls "
         f"<code>{escape(fn['name'])}</code>{meta}",
         f"<pre style='font-size:12px;'>{escape(_format_json(fn['arguments']))}</pre>",
         open_=True,
@@ -147,7 +159,7 @@ def _render_tool_result(content: str, max_chars: int | None) -> str:
         data = json.loads(content)
     except (json.JSONDecodeError, TypeError):
         return _collapsible(
-            f"{_styled('#986', '[tool result]', bold=False)} {len(content)} chars",
+            f"{_styled(COLOR_TOOL_RESULT, '[tool result]', bold=False)} {len(content)} chars",
             _truncate(content, max_chars),
         )
 
@@ -180,7 +192,7 @@ def _render_tool_result(content: str, max_chars: int | None) -> str:
     body = "\n\n".join(parts) if parts else "(no output)"
 
     return _collapsible(
-        f"{_styled('#986', '[tool result]', bold=False)} {escape(summary)}",
+        f"{_styled(COLOR_TOOL_RESULT, '[tool result]', bold=False)} {escape(summary)}",
         _truncate(body, max_chars),
     )
 
@@ -243,7 +255,7 @@ def _render_assertions(assertions: dict[str, Any]) -> str:
     parts = []
     for name, ok in assertions.items():
         icon = "\u2713" if ok else "\u2717"
-        color = "#4a4" if ok else "#c44"
+        color = COLOR_PASS if ok else COLOR_FAIL
         parts.append(f"<span style='color:{color};'>{icon}</span> {escape(name)}")
     return "&nbsp;&nbsp;".join(parts)
 
@@ -338,7 +350,7 @@ def _render_question_block(
         else "<div style='color:#888;'>(no response)</div>"
     )
     return _collapsible(
-        f"{_styled('#36a', '[user]')} {escape(user_content)}",
+        f"{_styled(COLOR_USER, '[user]')} {escape(user_content)}",
         body,
         open_=open_,
         raw=True,
@@ -363,7 +375,7 @@ def render_trace(data: dict[str, Any], max_chars: int | None = None) -> str:
 
     # Header: badge + question + stats
     passed = data.get("passed", False)
-    badge_color = "#4a4" if passed else "#c44"
+    badge_color = COLOR_PASS if passed else "#c44"
     badge_text = "PASS" if passed else "FAIL"
     parts.append(
         f"<div style='margin-bottom:12px;'>"

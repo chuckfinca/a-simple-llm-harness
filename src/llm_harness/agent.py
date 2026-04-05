@@ -60,12 +60,13 @@ def _extract_cost(response: Any) -> float | None:
         return None
 
 
-def _should_nudge(workspace: Path | None, trace: Trace, nudged: bool) -> bool:
-    """Models sometimes answer from memory without consulting the workspace."""
-    return bool(workspace) and not trace.tool_calls and not nudged
+def _needs_workspace_reminder(workspace: Path | None, trace: Trace, already_reminded: bool) -> bool:
+    """Without a nudge, models often answer from memory instead of exploring
+    the workspace — producing ungrounded responses with no citations."""
+    return bool(workspace) and not trace.tool_calls and not already_reminded
 
 
-_NUDGE_MESSAGE: Message = {
+_WORKSPACE_REMINDER: Message = {
     "role": "user",
     "content": (
         "Use the workspace tools to find evidence that supports "
@@ -73,6 +74,8 @@ _NUDGE_MESSAGE: Message = {
     ),
 }
 
+# Cache the system prompt (stable across turns) and the most recent message
+# (likely to appear again as context in the next turn's prompt)
 _DEFAULT_CACHE_INJECTION = [
     {"location": "message", "role": "system"},
     {"location": "message", "index": -1},
@@ -148,7 +151,13 @@ def _execute_tool_calls(
 
 
 class StreamedCompletion:
-    """Iterate for text deltas, then access .response when done."""
+    """Buffer chunks from a streaming LLM response until complete.
+
+    Iterate to get text chunks as they arrive. After iteration finishes,
+    access .response for the reconstructed full response with usage metrics.
+    This two-phase pattern is necessary because streaming APIs return
+    incremental text but we need the aggregated response for telemetry.
+    """
 
     def __init__(self, stream: Any) -> None:
         self._stream = stream
@@ -185,7 +194,7 @@ def _run_loop(
     completion_kwargs.setdefault(
         "cache_control_injection_points", _DEFAULT_CACHE_INJECTION
     )
-    nudged = False
+    reminded = False
     if scratch_dir is not None:
         active_scratch = scratch_dir
         scratch_ctx = None
@@ -225,9 +234,9 @@ def _run_loop(
             messages.append(assistant_msg)
 
             if not assistant_msg.get("tool_calls"):
-                if _should_nudge(workspace, trace, nudged):
-                    nudged = True
-                    messages.append(_NUDGE_MESSAGE)
+                if _needs_workspace_reminder(workspace, trace, reminded):
+                    reminded = True
+                    messages.append(_WORKSPACE_REMINDER)
                     continue
                 trace.answer = assistant_msg.get("content")
                 break
