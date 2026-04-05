@@ -60,13 +60,13 @@ def _extract_cost(response: Any) -> float | None:
         return None
 
 
-def _needs_workspace_reminder(workspace: Path | None, trace: Trace, already_reminded: bool) -> bool:
+def _should_nudge(workspace: Path | None, trace: Trace, nudged: bool) -> bool:
     """Without a nudge, models often answer from memory instead of exploring
     the workspace — producing ungrounded responses with no citations."""
-    return bool(workspace) and not trace.tool_calls and not already_reminded
+    return bool(workspace) and not trace.tool_calls and not already_nudged
 
 
-_WORKSPACE_REMINDER: Message = {
+_NUDGE_MESSAGE: Message = {
     "role": "user",
     "content": (
         "Use the workspace tools to find evidence that supports "
@@ -194,7 +194,7 @@ def _run_loop(
     completion_kwargs.setdefault(
         "cache_control_injection_points", _DEFAULT_CACHE_INJECTION
     )
-    reminded = False
+    nudged = False
     if scratch_dir is not None:
         active_scratch = scratch_dir
         scratch_ctx = None
@@ -234,9 +234,9 @@ def _run_loop(
             messages.append(assistant_msg)
 
             if not assistant_msg.get("tool_calls"):
-                if _needs_workspace_reminder(workspace, trace, reminded):
-                    reminded = True
-                    messages.append(_WORKSPACE_REMINDER)
+                if _should_nudge(workspace, trace, nudged):
+                    nudged = True
+                    messages.append(_NUDGE_MESSAGE)
                     continue
                 trace.answer = assistant_msg.get("content")
                 break
