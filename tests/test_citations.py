@@ -132,3 +132,12 @@ class TestProcessCitations:
         assert "[" not in clean
         assert len(sources) == 1
         assert sources[0]["matched"] is True
+
+    def test_bare_filename_reference(self) -> None:
+        workspace = self._make_workspace({"facts.md": "Some content."})
+        answer = "Darwin argues against this [facts.md]."
+        clean, sources = process_citations(answer, workspace)
+        assert "[" not in clean
+        assert len(sources) == 1
+        assert sources[0]["quote"] == ""
+        assert sources[0]["doc"] == "facts"

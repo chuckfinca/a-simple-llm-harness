@@ -13,6 +13,7 @@ from pathlib import Path
 _CITATION_RE = re.compile(
     r'\[([^:\[\]]+):\s*(["\u201c](?:[^"\u201d]*)["\u201d](?:\s*,\s*["\u201c](?:[^"\u201d]*)["\u201d])*)\]'
 )
+_BARE_CITATION_RE = re.compile(r'\[([a-zA-Z0-9_\-]+\.\w+)\]')
 _QUOTES_RE = re.compile(r'["\u201c]([^"\u201d]*)["\u201d]')
 _SUPERSCRIPT_DIGITS = str.maketrans(
     "0123456789", "\u2070\u00b9\u00b2\u00b3\u2074\u2075\u2076\u2077\u2078\u2079"
@@ -126,4 +127,25 @@ def process_citations(
         return "".join(superscripts)
 
     clean_answer = _CITATION_RE.sub(_replace, answer)
+
+    # Fallback: bare [filename.ext] references without a quoted passage
+    def _replace_bare(match: re.Match) -> str:
+        filename = match.group(1).strip()
+        key = (filename, "")
+        if key in seen:
+            return superscript(seen[key])
+        idx = len(sources) + 1
+        seen[key] = idx
+        sources.append({
+            "doc": Path(filename).stem.replace("_", " ").replace("-", " "),
+            "file": filename,
+            "quote": "",
+            "line": None,
+            "matched": True,
+            "id": idx,
+        })
+        return superscript(idx)
+
+    clean_answer = _BARE_CITATION_RE.sub(_replace_bare, clean_answer)
+
     return clean_answer, sources
