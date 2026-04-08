@@ -14,6 +14,9 @@ _CITATION_RE = re.compile(
     r'\[([^:\[\]]+):\s*(["\u201c](?:[^"\u201d]*)["\u201d](?:\s*,\s*["\u201c](?:[^"\u201d]*)["\u201d])*)\]'
 )
 _BARE_CITATION_RE = re.compile(r'\[([a-zA-Z0-9_\-]+\.\w+)\]')
+_BARE_LIST_CITATION_RE = re.compile(
+    r'\[([a-zA-Z0-9_\-]+\.\w+(?:\s*,\s*[a-zA-Z0-9_\-]+\.\w+)+)\]'
+)
 _QUOTES_RE = re.compile(r'["\u201c]([^"\u201d]*)["\u201d]')
 _SUPERSCRIPT_DIGITS = str.maketrans(
     "0123456789", "\u2070\u00b9\u00b2\u00b3\u2074\u2075\u2076\u2077\u2078\u2079"
@@ -127,6 +130,30 @@ def process_citations(
         return "".join(superscripts)
 
     clean_answer = _CITATION_RE.sub(_replace, answer)
+
+    # Fallback: comma-separated [file1.ext, file2.ext] lists
+    def _replace_bare_list(match: re.Match) -> str:
+        filenames = [f.strip() for f in match.group(1).split(",")]
+        superscripts = []
+        for filename in filenames:
+            key = (filename, "")
+            if key in seen:
+                superscripts.append(superscript(seen[key]))
+                continue
+            idx = len(sources) + 1
+            seen[key] = idx
+            sources.append({
+                "doc": Path(filename).stem.replace("_", " ").replace("-", " "),
+                "file": filename,
+                "quote": "",
+                "line": None,
+                "matched": True,
+                "id": idx,
+            })
+            superscripts.append(superscript(idx))
+        return "".join(superscripts)
+
+    clean_answer = _BARE_LIST_CITATION_RE.sub(_replace_bare_list, clean_answer)
 
     # Fallback: bare [filename.ext] references without a quoted passage
     def _replace_bare(match: re.Match) -> str:

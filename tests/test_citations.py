@@ -141,3 +141,13 @@ class TestProcessCitations:
         assert len(sources) == 1
         assert sources[0]["quote"] == ""
         assert sources[0]["doc"] == "facts"
+
+    def test_bare_filename_list(self) -> None:
+        workspace = self._make_workspace({"intro.txt": "x", "chapter1.txt": "y"})
+        answer = "Some text [intro.txt, chapter1.txt, chapter2.txt]."
+        clean, sources = process_citations(answer, workspace)
+        assert "[" not in clean
+        assert len(sources) == 3
+        assert sources[0]["doc"] == "intro"
+        assert sources[1]["doc"] == "chapter1"
+        assert sources[2]["doc"] == "chapter2"
