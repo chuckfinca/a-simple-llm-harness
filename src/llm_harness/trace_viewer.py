@@ -2,6 +2,9 @@
 
 Pure HTML generation with no display dependencies — usable from notebooks,
 web apps, or anywhere else that can render HTML.
+
+The reusable rendering primitives live in `block_render`; this module
+adds the LLM-specific schema (messages, turns, tool calls, telemetry).
 """
 
 from __future__ import annotations
@@ -10,53 +13,24 @@ import json
 from html import escape
 from typing import Any
 
+from llm_harness.block_render import (
+    COLOR_FAIL,
+    COLOR_OK,
+    collapsible,
+    format_json,
+    styled,
+    truncate,
+)
+
 # ---------------------------------------------------------------------------
-# Trace viewer color scheme
+# Trace viewer color scheme (LLM-role specific; neutral colors live in
+# block_render)
 # ---------------------------------------------------------------------------
 
 COLOR_SYSTEM = "#888"
 COLOR_USER = "#36a"
 COLOR_ASSISTANT = "#483"
 COLOR_TOOL_RESULT = "#986"
-COLOR_OK = "#4a4"
-COLOR_FAIL = "#c44"
-COLOR_META = "#999"
-
-# ---------------------------------------------------------------------------
-# Low-level formatting helpers
-# ---------------------------------------------------------------------------
-
-
-def _format_json(text: str) -> str:
-    try:
-        return json.dumps(json.loads(text), indent=2)
-    except (json.JSONDecodeError, TypeError):
-        return text
-
-
-def _collapsible(
-    summary_html: str, body: str, *, open_: bool = False, raw: bool = False
-) -> str:
-    open_attr = " open" if open_ else ""
-    if raw:
-        inner = f"<div style='margin:4px 0 4px 16px;'>{body}</div>"
-    else:
-        inner = (
-            f"<pre style='margin:4px 0 4px 16px;font-size:12px;"
-            f"color:#555;'>{escape(body)}</pre>"
-        )
-    return f"<details{open_attr}><summary>{summary_html}</summary>{inner}</details>"
-
-
-def _truncate(text: str, max_chars: int | None = None) -> str:
-    if max_chars is not None and len(text) > max_chars:
-        return text[:max_chars] + f"\n... ({len(text) - max_chars} more chars)"
-    return text
-
-
-def _styled(color: str, text: str, bold: bool = True) -> str:
-    weight = "font-weight:bold;" if bold else ""
-    return f"<span style='color:{color};{weight}'>{text}</span>"
 
 
 # ---------------------------------------------------------------------------
@@ -65,17 +39,17 @@ def _styled(color: str, text: str, bold: bool = True) -> str:
 
 
 def _render_system(content: str) -> str:
-    return _collapsible(
-        f"{_styled(COLOR_SYSTEM, '[system]')} "
+    return collapsible(
+        f"{styled(COLOR_SYSTEM, '[system]')} "
         f"<span style='color:#888;font-size:12px;'>({len(content)} chars)</span>",
-        _format_json(content),
+        format_json(content),
     )
 
 
 def _render_user(content: str) -> str:
     return (
         f"<div style='margin:6px 0;'>"
-        f"{_styled(COLOR_USER, '[user]')} {escape(content)}</div>"
+        f"{styled(COLOR_USER, '[user]')} {escape(content)}</div>"
     )
 
 
@@ -111,11 +85,11 @@ def _turn_meta_html(turn: dict[str, Any] | None) -> str:
 
 def _render_assistant_text(content: str, turn: dict[str, Any] | None = None) -> str:
     meta = _turn_meta_html(turn)
-    return _collapsible(
-        f"{_styled(COLOR_ASSISTANT, '[assistant]')} ({len(content)} chars){meta}",
+    return collapsible(
+        f"{styled(COLOR_ASSISTANT, '[assistant]')} ({len(content)} chars){meta}",
         f"<div style='white-space:pre-wrap;'>{escape(content)}</div>",
         open_=True,
-        raw=True,
+        body_is_html=True,
     )
 
 
@@ -128,21 +102,21 @@ def _render_tool_call(fn: dict[str, Any], turn: dict[str, Any] | None = None) ->
     meta = _turn_meta_html(turn)
 
     if fn["name"] == "run_python" and "code" in args:
-        return _collapsible(
-            f"{_styled(COLOR_ASSISTANT, '[assistant]')} calls "
+        return collapsible(
+            f"{styled(COLOR_ASSISTANT, '[assistant]')} calls "
             f"<code>{escape(fn['name'])}</code>{meta}",
             f"<pre style='font-size:12px;background:#f6f6f6;padding:8px;"
             f"border-radius:4px;'>{escape(args['code'])}</pre>",
             open_=True,
-            raw=True,
+            body_is_html=True,
         )
 
-    return _collapsible(
-        f"{_styled(COLOR_ASSISTANT, '[assistant]')} calls "
+    return collapsible(
+        f"{styled(COLOR_ASSISTANT, '[assistant]')} calls "
         f"<code>{escape(fn['name'])}</code>{meta}",
-        f"<pre style='font-size:12px;'>{escape(_format_json(fn['arguments']))}</pre>",
+        f"<pre style='font-size:12px;'>{escape(format_json(fn['arguments']))}</pre>",
         open_=True,
-        raw=True,
+        body_is_html=True,
     )
 
 
@@ -158,9 +132,9 @@ def _render_tool_result(content: str, max_chars: int | None) -> str:
     try:
         data = json.loads(content)
     except (json.JSONDecodeError, TypeError):
-        return _collapsible(
-            f"{_styled(COLOR_TOOL_RESULT, '[tool result]', bold=False)} {len(content)} chars",
-            _truncate(content, max_chars),
+        return collapsible(
+            f"{styled(COLOR_TOOL_RESULT, '[tool result]', bold=False)} {len(content)} chars",
+            truncate(content, max_chars),
         )
 
     if "error" in data:
@@ -191,9 +165,9 @@ def _render_tool_result(content: str, max_chars: int | None) -> str:
             parts.append(f"exit_code={exit_code}")
     body = "\n\n".join(parts) if parts else "(no output)"
 
-    return _collapsible(
-        f"{_styled(COLOR_TOOL_RESULT, '[tool result]', bold=False)} {escape(summary)}",
-        _truncate(body, max_chars),
+    return collapsible(
+        f"{styled(COLOR_TOOL_RESULT, '[tool result]', bold=False)} {escape(summary)}",
+        truncate(body, max_chars),
     )
 
 
@@ -245,7 +219,7 @@ def _render_telemetry(turns: list[dict[str, Any]], wall_time_s: float) -> str:
     if total_cached > 0:
         lines.append(f"Cached: {total_cached} tokens")
 
-    return _collapsible(
+    return collapsible(
         "<span style='color:#888;font-size:13px;'>telemetry</span>",
         "\n".join(lines),
     )
@@ -254,7 +228,7 @@ def _render_telemetry(turns: list[dict[str, Any]], wall_time_s: float) -> str:
 def _render_assertions(assertions: dict[str, Any]) -> str:
     parts = []
     for name, ok in assertions.items():
-        icon = "\u2713" if ok else "\u2717"
+        icon = "✓" if ok else "✗"
         color = COLOR_OK if ok else COLOR_FAIL
         parts.append(f"<span style='color:{color};'>{icon}</span> {escape(name)}")
     return "&nbsp;&nbsp;".join(parts)
@@ -349,11 +323,11 @@ def _render_question_block(
         if inner_parts
         else "<div style='color:#888;'>(no response)</div>"
     )
-    return _collapsible(
-        f"{_styled(COLOR_USER, '[user]')} {escape(user_content)}",
+    return collapsible(
+        f"{styled(COLOR_USER, '[user]')} {escape(user_content)}",
         body,
         open_=open_,
-        raw=True,
+        body_is_html=True,
     )
 
 
@@ -455,7 +429,7 @@ def render_trace(data: dict[str, Any], max_chars: int | None = None) -> str:
     if tools:
         names = [t.get("function", {}).get("name", "?") for t in tools]
         parts.append(
-            _collapsible(
+            collapsible(
                 f"<span style='color:#888;font-size:13px;'>"
                 f"{len(tools)} tool definitions: {', '.join(names)}</span>",
                 json.dumps(tools, indent=2),
@@ -470,11 +444,11 @@ def render_trace(data: dict[str, Any], max_chars: int | None = None) -> str:
             for q in prior_questions
         ]
         parts.append(
-            _collapsible(
+            collapsible(
                 f"<span style='color:#888;font-size:13px;'>"
                 f"cached session context ({len(prior_questions)} questions)</span>",
                 "\n".join(prior_parts),
-                raw=True,
+                body_is_html=True,
             )
         )
 
@@ -488,7 +462,7 @@ def render_trace(data: dict[str, Any], max_chars: int | None = None) -> str:
     # Raw messages JSON
     raw_json = json.dumps(messages, indent=2, default=str)
     parts.append(
-        _collapsible(
+        collapsible(
             "<span style='color:#888;font-size:13px;'>raw messages JSON</span>",
             raw_json,
         )
