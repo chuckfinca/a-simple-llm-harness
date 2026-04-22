@@ -67,6 +67,113 @@ def _find_quote_in_text(text: str, quote: str) -> int:
     return -1
 
 
+def _resolve_quote(workspace: Path, filename: str, quote: str) -> dict:
+    """Find quote in workspace files; return source dict with line + matched."""
+    matched = False
+    line = None
+    candidates = [filename, f"{filename}.md"]
+    stem = Path(filename).stem
+    candidates.extend(
+        str(sub.relative_to(workspace)) for sub in workspace.rglob(f"{stem}.*")
+    )
+    for candidate in dict.fromkeys(candidates):
+        filepath = workspace / candidate
+        if filepath.is_file():
+            try:
+                text = filepath.read_text(errors="replace")
+                pos = _find_quote_in_text(text, quote)
+                if pos >= 0:
+                    matched = True
+                    line = text[:pos].count("\n") + 1
+                    break
+            except OSError:
+                pass
+    return {
+        "doc": Path(filename).stem.replace("_", " ").replace("-", " "),
+        "file": filename,
+        "quote": quote,
+        "line": line,
+        "matched": matched,
+    }
+
+
+def _bare_source(filename: str, idx: int) -> dict:
+    """Source dict for a citation that has no quoted passage."""
+    return {
+        "doc": Path(filename).stem.replace("_", " ").replace("-", " "),
+        "file": filename,
+        "quote": "",
+        "line": None,
+        "matched": True,
+        "id": idx,
+    }
+
+
+def _apply_full_citations(
+    answer: str,
+    workspace: Path,
+    sources: list[dict],
+    seen: dict[tuple[str, str], int],
+) -> str:
+    def _replace(match: re.Match) -> str:
+        filename = match.group(1).strip()
+        quotes = _QUOTES_RE.findall(match.group(2))
+        superscripts = []
+        for quote in quotes:
+            quote = quote.strip()
+            key = (filename, quote)
+            if key in seen:
+                superscripts.append(superscript(seen[key]))
+                continue
+            idx = len(sources) + 1
+            seen[key] = idx
+            sources.append({"id": idx, **_resolve_quote(workspace, filename, quote)})
+            superscripts.append(superscript(idx))
+        return "".join(superscripts)
+
+    return _CITATION_RE.sub(_replace, answer)
+
+
+def _apply_bare_list_citations(
+    answer: str,
+    sources: list[dict],
+    seen: dict[tuple[str, str], int],
+) -> str:
+    def _replace(match: re.Match) -> str:
+        filenames = [f.strip() for f in match.group(1).split(",")]
+        superscripts = []
+        for filename in filenames:
+            key = (filename, "")
+            if key in seen:
+                superscripts.append(superscript(seen[key]))
+                continue
+            idx = len(sources) + 1
+            seen[key] = idx
+            sources.append(_bare_source(filename, idx))
+            superscripts.append(superscript(idx))
+        return "".join(superscripts)
+
+    return _BARE_LIST_CITATION_RE.sub(_replace, answer)
+
+
+def _apply_bare_citations(
+    answer: str,
+    sources: list[dict],
+    seen: dict[tuple[str, str], int],
+) -> str:
+    def _replace(match: re.Match) -> str:
+        filename = match.group(1).strip()
+        key = (filename, "")
+        if key in seen:
+            return superscript(seen[key])
+        idx = len(sources) + 1
+        seen[key] = idx
+        sources.append(_bare_source(filename, idx))
+        return superscript(idx)
+
+    return _BARE_CITATION_RE.sub(_replace, answer)
+
+
 def process_citations(
     answer: str, workspace: Path | None
 ) -> tuple[str, list[dict]]:
@@ -78,101 +185,9 @@ def process_citations(
     """
     if not answer or not workspace:
         return answer or "", []
-
     sources: list[dict] = []
     seen: dict[tuple[str, str], int] = {}
-
-    def _resolve_quote(filename: str, quote: str) -> dict:
-        matched = False
-        line = None
-        candidates = [filename, f"{filename}.md"]
-        stem = Path(filename).stem
-        candidates.extend(
-            str(sub.relative_to(workspace)) for sub in workspace.rglob(f"{stem}.*")
-        )
-        for candidate in dict.fromkeys(candidates):
-            filepath = workspace / candidate
-            if filepath.is_file():
-                try:
-                    text = filepath.read_text(errors="replace")
-                    pos = _find_quote_in_text(text, quote)
-                    if pos >= 0:
-                        matched = True
-                        line = text[:pos].count("\n") + 1
-                        break
-                except OSError:
-                    pass
-        return {
-            "doc": Path(filename).stem.replace("_", " ").replace("-", " "),
-            "file": filename,
-            "quote": quote,
-            "line": line,
-            "matched": matched,
-        }
-
-    def _replace(match: re.Match) -> str:
-        filename = match.group(1).strip()
-        raw_quotes = match.group(2)
-        quotes = _QUOTES_RE.findall(raw_quotes)
-
-        superscripts = []
-        for quote in quotes:
-            quote = quote.strip()
-            key = (filename, quote)
-            if key in seen:
-                superscripts.append(superscript(seen[key]))
-                continue
-            idx = len(sources) + 1
-            seen[key] = idx
-            sources.append({"id": idx, **_resolve_quote(filename, quote)})
-            superscripts.append(superscript(idx))
-
-        return "".join(superscripts)
-
-    clean_answer = _CITATION_RE.sub(_replace, answer)
-
-    # Fallback: comma-separated [file1.ext, file2.ext] lists
-    def _replace_bare_list(match: re.Match) -> str:
-        filenames = [f.strip() for f in match.group(1).split(",")]
-        superscripts = []
-        for filename in filenames:
-            key = (filename, "")
-            if key in seen:
-                superscripts.append(superscript(seen[key]))
-                continue
-            idx = len(sources) + 1
-            seen[key] = idx
-            sources.append({
-                "doc": Path(filename).stem.replace("_", " ").replace("-", " "),
-                "file": filename,
-                "quote": "",
-                "line": None,
-                "matched": True,
-                "id": idx,
-            })
-            superscripts.append(superscript(idx))
-        return "".join(superscripts)
-
-    clean_answer = _BARE_LIST_CITATION_RE.sub(_replace_bare_list, clean_answer)
-
-    # Fallback: bare [filename.ext] references without a quoted passage
-    def _replace_bare(match: re.Match) -> str:
-        filename = match.group(1).strip()
-        key = (filename, "")
-        if key in seen:
-            return superscript(seen[key])
-        idx = len(sources) + 1
-        seen[key] = idx
-        sources.append({
-            "doc": Path(filename).stem.replace("_", " ").replace("-", " "),
-            "file": filename,
-            "quote": "",
-            "line": None,
-            "matched": True,
-            "id": idx,
-        })
-        return superscript(idx)
-
-    clean_answer = _BARE_CITATION_RE.sub(_replace_bare, clean_answer)
-
+    clean_answer = _apply_full_citations(answer, workspace, sources, seen)
+    clean_answer = _apply_bare_list_citations(clean_answer, sources, seen)
+    clean_answer = _apply_bare_citations(clean_answer, sources, seen)
     return clean_answer, sources
