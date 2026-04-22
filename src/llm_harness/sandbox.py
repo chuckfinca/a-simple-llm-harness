@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -12,14 +14,64 @@ TIMEOUT_SECONDS = 30
 CONTAINER_PREFIX = "lh-sandbox-"
 DOCKERFILE_DIR = Path(__file__).resolve().parent.parent.parent / "sandbox"
 
+DAEMON_WAIT_SECONDS = 90
+DAEMON_POLL_INTERVAL = 2
+MACOS_DOCKER_APP = Path("/Applications/Docker.app")
+
 # Avoid re-checking/rebuilding the Docker image on every tool call
 _image_ready = False
+
+
+def _daemon_reachable() -> bool:
+    try:
+        result = subprocess.run(
+            ["docker", "info", "--format", "{{.ServerVersion}}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+    return result.returncode == 0 and bool(result.stdout.strip())
+
+
+def _try_launch_docker_macos() -> bool:
+    """Best-effort start of Docker Desktop on macOS. False if unavailable."""
+    if sys.platform != "darwin" or not MACOS_DOCKER_APP.exists():
+        return False
+    print(f"Docker daemon not reachable; launching {MACOS_DOCKER_APP.name}...")
+    subprocess.run(["open", "-a", "Docker"], check=False, timeout=10)
+    return True
+
+
+def ensure_docker_daemon() -> None:
+    """Block until the Docker daemon answers, launching Docker Desktop on
+    macOS if needed. Raises RuntimeError on any other platform / runtime
+    where we can't auto-launch and the daemon is down."""
+    if _daemon_reachable():
+        return
+    if not _try_launch_docker_macos():
+        raise RuntimeError(
+            "Docker daemon is not reachable. Start Docker Desktop, Colima, "
+            "OrbStack, or whichever runtime you use, then retry."
+        )
+    deadline = time.monotonic() + DAEMON_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        if _daemon_reachable():
+            return
+        time.sleep(DAEMON_POLL_INTERVAL)
+    raise RuntimeError(
+        f"Docker daemon did not become reachable within {DAEMON_WAIT_SECONDS}s "
+        f"after launching Docker Desktop."
+    )
 
 
 def ensure_sandbox_image() -> None:
     global _image_ready
     if _image_ready:
         return
+
+    ensure_docker_daemon()
 
     result = subprocess.run(
         ["docker", "images", "-q", IMAGE_NAME],
