@@ -30,9 +30,33 @@ _SUPERSCRIPT_DIGITS = str.maketrans(
     "0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹"
 )
 
+# Private Use Area sentinels — wrap each citation ID through the regex
+# subs so adjacent citations can be detected and separated by a comma
+# before the IDs are rendered as superscript digits (where the boundary
+# would be lost: ¹³¹⁴ is indistinguishable from ¹³¹,⁴).
+_SENTINEL_OPEN = ""
+_SENTINEL_CLOSE = ""
+_ADJACENT_SENTINELS_RE = re.compile(
+    re.escape(_SENTINEL_CLOSE) + r"(?=" + re.escape(_SENTINEL_OPEN) + r")"
+)
+_SENTINEL_PAIR_RE = re.compile(
+    re.escape(_SENTINEL_OPEN) + r"(\d+)" + re.escape(_SENTINEL_CLOSE)
+)
+
 
 def superscript(n: int) -> str:
     return str(n).translate(_SUPERSCRIPT_DIGITS)
+
+
+def _sentinel(idx: int) -> str:
+    return f"{_SENTINEL_OPEN}{idx}{_SENTINEL_CLOSE}"
+
+
+def _render_sentinels(text: str) -> str:
+    text = _ADJACENT_SENTINELS_RE.sub(_SENTINEL_CLOSE + ",", text)
+    return _SENTINEL_PAIR_RE.sub(
+        lambda m: superscript(int(m.group(1))), text
+    )
 
 
 def _find_exact(text: str, quote: str) -> int:
@@ -147,12 +171,13 @@ def process_citations(
     def _replace_element(match: re.Match) -> str:
         filename = match.group("file").strip()
         quote = match.group("quote").strip()
-        return superscript(_register(filename, quote))
+        return _sentinel(_register(filename, quote))
 
     def _replace_self_closing(match: re.Match) -> str:
         filename = match.group("file").strip()
-        return superscript(_register(filename, ""))
+        return _sentinel(_register(filename, ""))
 
     clean = _CITE_ELEMENT_RE.sub(_replace_element, answer)
     clean = _CITE_SELF_CLOSING_RE.sub(_replace_self_closing, clean)
+    clean = _render_sentinels(clean)
     return clean, sources

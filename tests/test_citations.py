@@ -90,9 +90,50 @@ class TestProcessCitations:
             '<cite file="facts.md">Swift expert.</cite>'
             '<cite file="facts.md">Python proficient.</cite>.'
         )
-        _, sources = process_citations(answer, workspace)
+        clean, sources = process_citations(answer, workspace)
         assert len(sources) == 2
         assert all(s["matched"] for s in sources)
+        assert clean == "Skills ¹,²."
+
+    def test_three_adjacent_citations_get_two_commas(self) -> None:
+        workspace = self._make_workspace({
+            "a.md": "alpha", "b.md": "beta", "c.md": "gamma",
+        })
+        answer = (
+            'Three '
+            '<cite file="a.md">alpha</cite>'
+            '<cite file="b.md">beta</cite>'
+            '<cite file="c.md">gamma</cite>.'
+        )
+        clean, _ = process_citations(answer, workspace)
+        assert clean == "Three ¹,²,³."
+
+    def test_non_adjacent_citations_have_no_comma(self) -> None:
+        workspace = self._make_workspace({
+            "a.md": "alpha", "b.md": "beta",
+        })
+        answer = (
+            'First <cite file="a.md">alpha</cite> '
+            'then <cite file="b.md">beta</cite>.'
+        )
+        clean, _ = process_citations(answer, workspace)
+        assert clean == "First ¹ then ²."
+
+    def test_multi_digit_adjacent_citations(self) -> None:
+        """Comma must come from a known boundary — not from looking at the
+        rendered digits — because ¹⁰¹¹ would otherwise be unsplittable."""
+        files = {f"f{i}.md": f"content{i}" for i in range(1, 13)}
+        workspace = self._make_workspace(files)
+        tags = "".join(
+            f'<cite file="f{i}.md">content{i}</cite>' for i in range(1, 13)
+        )
+        answer = f"Many {tags}."
+        clean, _ = process_citations(answer, workspace)
+        expected_supers = ",".join(
+            "".join("⁰¹²³⁴⁵⁶⁷⁸⁹"[int(d)] for d in str(i))
+            for i in range(1, 13)
+        )
+        assert clean == f"Many {expected_supers}."
 
     def test_deduplication(self) -> None:
         workspace = self._make_workspace({"facts.md": "Founded in 2013."})
