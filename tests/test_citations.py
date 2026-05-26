@@ -14,11 +14,11 @@ from llm_harness.citations import (
 
 class TestSuperscript:
     def test_single_digit(self) -> None:
-        assert superscript(1) == "\u00b9"
-        assert superscript(5) == "\u2075"
+        assert superscript(1) == "¹"
+        assert superscript(5) == "⁵"
 
     def test_multi_digit(self) -> None:
-        assert superscript(12) == "\u00b9\u00b2"
+        assert superscript(12) == "¹²"
 
 
 class TestFindExact:
@@ -45,7 +45,7 @@ class TestFindEllipsisSegment:
 
     def test_unicode_ellipsis(self) -> None:
         text = "The quick brown fox jumps over the lazy dog"
-        quote = "The quick brown fox\u2026 over the lazy dog"
+        quote = "The quick brown fox… over the lazy dog"
         assert _find_ellipsis_segment(text, quote) >= 0
 
 
@@ -73,25 +73,33 @@ class TestProcessCitations:
         workspace = self._make_workspace({
             "facts.md": "AppSimple LLC is a consultancy.\nFounded in 2013."
         })
-        answer = 'AppSimple is a consultancy [facts.md: "AppSimple LLC is a consultancy."].'
+        answer = 'AppSimple is a consultancy <cite file="facts.md">AppSimple LLC is a consultancy.</cite>.'
         clean, sources = process_citations(answer, workspace)
-        assert "[" not in clean
+        assert "<cite" not in clean
+        assert "</cite>" not in clean
         assert len(sources) == 1
         assert sources[0]["matched"] is True
         assert sources[0]["line"] == 1
 
-    def test_multi_quote_citation(self) -> None:
+    def test_adjacent_citations(self) -> None:
         workspace = self._make_workspace({
             "facts.md": "Swift expert.\nPython proficient."
         })
-        answer = 'Skills [facts.md: "Swift expert.", "Python proficient."].'
+        answer = (
+            'Skills '
+            '<cite file="facts.md">Swift expert.</cite>'
+            '<cite file="facts.md">Python proficient.</cite>.'
+        )
         _, sources = process_citations(answer, workspace)
         assert len(sources) == 2
         assert all(s["matched"] for s in sources)
 
     def test_deduplication(self) -> None:
         workspace = self._make_workspace({"facts.md": "Founded in 2013."})
-        answer = 'A [facts.md: "Founded in 2013."]. B [facts.md: "Founded in 2013."].'
+        answer = (
+            'A <cite file="facts.md">Founded in 2013.</cite>. '
+            'B <cite file="facts.md">Founded in 2013.</cite>.'
+        )
         _, sources = process_citations(answer, workspace)
         assert len(sources) == 1
 
@@ -108,46 +116,69 @@ class TestProcessCitations:
 
     def test_unmatched_quote(self) -> None:
         workspace = self._make_workspace({"facts.md": "Actual content."})
-        answer = 'Claim [facts.md: "Nonexistent text."].'
+        answer = 'Claim <cite file="facts.md">Nonexistent text.</cite>.'
         _, sources = process_citations(answer, workspace)
         assert len(sources) == 1
         assert sources[0]["matched"] is False
 
     def test_filename_without_extension(self) -> None:
         workspace = self._make_workspace({"facts.md": "Some fact."})
-        answer = 'Claim [facts: "Some fact."].'
+        answer = 'Claim <cite file="facts">Some fact.</cite>.'
         _, sources = process_citations(answer, workspace)
         assert sources[0]["matched"] is True
 
     def test_doc_display_name(self) -> None:
         workspace = self._make_workspace({"ai-and-ml-services.md": "AI content."})
-        answer = 'Claim [ai-and-ml-services.md: "AI content."].'
+        answer = 'Claim <cite file="ai-and-ml-services.md">AI content.</cite>.'
         _, sources = process_citations(answer, workspace)
         assert sources[0]["doc"] == "ai and ml services"
 
-    def test_smart_quotes(self) -> None:
-        workspace = self._make_workspace({"facts.md": "Founded in 2013."})
-        answer = 'Claim [facts.md: \u201cFounded in 2013.\u201d].'
-        clean, sources = process_citations(answer, workspace)
-        assert "[" not in clean
-        assert len(sources) == 1
-        assert sources[0]["matched"] is True
-
-    def test_bare_filename_reference(self) -> None:
+    def test_self_closing_whole_file(self) -> None:
         workspace = self._make_workspace({"facts.md": "Some content."})
-        answer = "Darwin argues against this [facts.md]."
+        answer = 'Darwin argues against this <cite file="facts.md"/>.'
         clean, sources = process_citations(answer, workspace)
-        assert "[" not in clean
+        assert "<cite" not in clean
         assert len(sources) == 1
         assert sources[0]["quote"] == ""
         assert sources[0]["doc"] == "facts"
 
-    def test_bare_filename_list(self) -> None:
-        workspace = self._make_workspace({"intro.txt": "x", "chapter1.txt": "y"})
-        answer = "Some text [intro.txt, chapter1.txt, chapter2.txt]."
+    def test_single_quote_attribute(self) -> None:
+        workspace = self._make_workspace({"facts.md": "Founded in 2013."})
+        answer = "Claim <cite file='facts.md'>Founded in 2013.</cite>."
         clean, sources = process_citations(answer, workspace)
-        assert "[" not in clean
-        assert len(sources) == 3
-        assert sources[0]["doc"] == "intro"
-        assert sources[1]["doc"] == "chapter1"
-        assert sources[2]["doc"] == "chapter2"
+        assert "<cite" not in clean
+        assert sources[0]["matched"] is True
+
+    def test_quote_containing_double_quotes(self) -> None:
+        """Passages with embedded quote chars survive parsing because the
+        passage is the element body, not an attribute value."""
+        workspace = self._make_workspace({
+            "facts.md": 'He said "hello" and walked away.'
+        })
+        answer = (
+            'Claim <cite file="facts.md">'
+            'He said "hello" and walked away.'
+            '</cite>.'
+        )
+        _, sources = process_citations(answer, workspace)
+        assert sources[0]["matched"] is True
+
+    def test_passage_spanning_newlines(self) -> None:
+        workspace = self._make_workspace({
+            "facts.md": "First line.\nSecond line."
+        })
+        answer = (
+            'Claim <cite file="facts.md">First line.\n'
+            'Second line.</cite>.'
+        )
+        _, sources = process_citations(answer, workspace)
+        assert sources[0]["matched"] is True
+
+    def test_legacy_bracket_syntax_left_alone(self) -> None:
+        """Old [file: "quote"] syntax is no longer parsed. It renders as
+        literal text rather than silently failing — making drift visible."""
+        workspace = self._make_workspace({"facts.md": "Some fact."})
+        answer = 'Claim [facts.md: "Some fact."].'
+        clean, sources = process_citations(answer, workspace)
+        assert clean == answer
+        assert sources == []

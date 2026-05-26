@@ -1,8 +1,14 @@
 """Parse and verify inline citations from agent responses.
 
-The agent is instructed to cite evidence as [filename: "quoted passage"].
-This module extracts those citations, verifies the quoted text against
-workspace files, and replaces them with Unicode superscript numbers.
+The agent is instructed to cite evidence as <cite file="X">passage</cite>,
+or <cite file="X"/> when citing a whole file. This module extracts those
+tags, verifies the passage against workspace files, and replaces each tag
+with a Unicode superscript footnote number.
+
+XML-style tags are used because markdown renderers ignore them, regex
+parsing is unambiguous, and they survive provider differences in how
+models format inline content. The previous bracket-based syntax broke
+whenever the model added emphasis characters around the citation.
 """
 
 from __future__ import annotations
@@ -10,16 +16,18 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-_CITATION_RE = re.compile(
-    r'\[([^:\[\]]+):\s*(["\u201c](?:[^"\u201d]*)["\u201d](?:\s*,\s*["\u201c](?:[^"\u201d]*)["\u201d])*)\]'
+_CITE_ELEMENT_RE = re.compile(
+    r'<cite\s+file=(?P<q>["\'])(?P<file>[^"\']+)(?P=q)\s*>'
+    r'(?P<quote>.*?)'
+    r'</cite\s*>',
+    re.DOTALL,
 )
-_BARE_CITATION_RE = re.compile(r'\[([a-zA-Z0-9_\-]+\.\w+)\]')
-_BARE_LIST_CITATION_RE = re.compile(
-    r'\[([a-zA-Z0-9_\-]+\.\w+(?:\s*,\s*[a-zA-Z0-9_\-]+\.\w+)+)\]'
+_CITE_SELF_CLOSING_RE = re.compile(
+    r'<cite\s+file=(?P<q>["\'])(?P<file>[^"\']+)(?P=q)\s*/>',
 )
-_QUOTES_RE = re.compile(r'["\u201c]([^"\u201d]*)["\u201d]')
+
 _SUPERSCRIPT_DIGITS = str.maketrans(
-    "0123456789", "\u2070\u00b9\u00b2\u00b3\u2074\u2075\u2076\u2077\u2078\u2079"
+    "0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹"
 )
 
 
@@ -97,97 +105,54 @@ def _resolve_quote(workspace: Path, filename: str, quote: str) -> dict:
     }
 
 
-def _bare_source(filename: str, idx: int) -> dict:
-    """Source dict for a citation that has no quoted passage."""
+def _whole_file_source(filename: str) -> dict:
     return {
         "doc": Path(filename).stem.replace("_", " ").replace("-", " "),
         "file": filename,
         "quote": "",
         "line": None,
         "matched": True,
-        "id": idx,
     }
-
-
-def _apply_full_citations(
-    answer: str,
-    workspace: Path,
-    sources: list[dict],
-    seen: dict[tuple[str, str], int],
-) -> str:
-    def _replace(match: re.Match) -> str:
-        filename = match.group(1).strip()
-        quotes = _QUOTES_RE.findall(match.group(2))
-        superscripts = []
-        for quote in quotes:
-            quote = quote.strip()
-            key = (filename, quote)
-            if key in seen:
-                superscripts.append(superscript(seen[key]))
-                continue
-            idx = len(sources) + 1
-            seen[key] = idx
-            sources.append({"id": idx, **_resolve_quote(workspace, filename, quote)})
-            superscripts.append(superscript(idx))
-        return "".join(superscripts)
-
-    return _CITATION_RE.sub(_replace, answer)
-
-
-def _apply_bare_list_citations(
-    answer: str,
-    sources: list[dict],
-    seen: dict[tuple[str, str], int],
-) -> str:
-    def _replace(match: re.Match) -> str:
-        filenames = [f.strip() for f in match.group(1).split(",")]
-        superscripts = []
-        for filename in filenames:
-            key = (filename, "")
-            if key in seen:
-                superscripts.append(superscript(seen[key]))
-                continue
-            idx = len(sources) + 1
-            seen[key] = idx
-            sources.append(_bare_source(filename, idx))
-            superscripts.append(superscript(idx))
-        return "".join(superscripts)
-
-    return _BARE_LIST_CITATION_RE.sub(_replace, answer)
-
-
-def _apply_bare_citations(
-    answer: str,
-    sources: list[dict],
-    seen: dict[tuple[str, str], int],
-) -> str:
-    def _replace(match: re.Match) -> str:
-        filename = match.group(1).strip()
-        key = (filename, "")
-        if key in seen:
-            return superscript(seen[key])
-        idx = len(sources) + 1
-        seen[key] = idx
-        sources.append(_bare_source(filename, idx))
-        return superscript(idx)
-
-    return _BARE_CITATION_RE.sub(_replace, answer)
 
 
 def process_citations(
     answer: str, workspace: Path | None
 ) -> tuple[str, list[dict]]:
-    """Parse [filename: "quote"] citations, verify against workspace files.
+    """Parse <cite> tags, verify quoted passages against workspace files.
 
-    Returns (clean_answer, sources) where clean_answer has citations replaced
-    with Unicode superscript numbers and sources is a list of dicts with keys:
-    id, doc, file, quote, line, matched.
+    Returns (clean_answer, sources) where clean_answer has citation tags
+    replaced with Unicode superscript numbers and sources is a list of dicts
+    with keys: id, doc, file, quote, line, matched.
     """
     if not answer or not workspace:
         return answer or "", []
+
     sources: list[dict] = []
     seen: dict[tuple[str, str], int] = {}
-    clean_answer = _apply_full_citations(answer, workspace, sources, seen)
-    clean_answer = _apply_bare_list_citations(clean_answer, sources, seen)
-    clean_answer = _apply_bare_citations(clean_answer, sources, seen)
-    return clean_answer, sources
+
+    def _register(filename: str, quote: str) -> int:
+        key = (filename, quote)
+        if key in seen:
+            return seen[key]
+        idx = len(sources) + 1
+        seen[key] = idx
+        source = (
+            _resolve_quote(workspace, filename, quote)
+            if quote
+            else _whole_file_source(filename)
+        )
+        sources.append({"id": idx, **source})
+        return idx
+
+    def _replace_element(match: re.Match) -> str:
+        filename = match.group("file").strip()
+        quote = match.group("quote").strip()
+        return superscript(_register(filename, quote))
+
+    def _replace_self_closing(match: re.Match) -> str:
+        filename = match.group("file").strip()
+        return superscript(_register(filename, ""))
+
+    clean = _CITE_ELEMENT_RE.sub(_replace_element, answer)
+    clean = _CITE_SELF_CLOSING_RE.sub(_replace_self_closing, clean)
+    return clean, sources
