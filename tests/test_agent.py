@@ -180,3 +180,21 @@ class TestAgentLoop:
         assert len(agent_run.trace.tool_calls) == 1
         assert agent_run.trace.tool_calls[0]["name"] == "calculator"
         assert "result" in agent_run.trace.tool_calls[0]
+
+    def test_completion_defaults_to_litellm(
+        self, make_response: Any, monkeypatch: Any
+    ) -> None:
+        import litellm
+
+        monkeypatch.setattr(
+            litellm, "completion", lambda **kwargs: make_response(content="Hi")
+        )
+
+        agent_run = run_agent_loop(
+            model="test-model",
+            messages=[{"role": "user", "content": "test"}],
+            tools=TOOL_DEFINITIONS,
+        )
+        list(agent_run)
+
+        assert agent_run.trace.answer == "Hi"
