@@ -43,7 +43,9 @@ class TestSimpleCompletion:
         assert result.content == "42"
         assert result.prompt_tokens == 10
         assert result.completion_tokens == 3
-        assert result.cached_tokens == 0
+        # usage was reported, but without prompt_tokens_details — cache
+        # info simply wasn't provided, distinct from "0 cached tokens".
+        assert result.cached_tokens is None
         assert result.cost == 0.004
         assert result.model == "test-model-v2"
         assert result.latency_s >= 0.0
@@ -109,16 +111,39 @@ class TestSimpleCompletion:
 
         assert result.cached_tokens == 12
 
-    def test_missing_usage_yields_zero_tokens(
+    def test_cached_tokens_explicit_zero_is_not_none(
         self, make_response: Any, capture_completion: dict[str, Any]
     ) -> None:
+        """A provider that reports usage details AND says 0 cached
+        tokens is a real, common case (no cache hit) — must stay 0,
+        not collapse into the "not reported at all" None."""
+        capture_completion["response"] = make_response(
+            content="ok",
+            usage={
+                "prompt_tokens": 20,
+                "completion_tokens": 5,
+                "prompt_tokens_details": SimpleNamespace(cached_tokens=0),
+            },
+        )
+
+        result = simple_completion("test-model", [{"role": "user", "content": "q"}])
+
+        assert result.cached_tokens == 0
+
+    def test_missing_usage_yields_none_tokens(
+        self, make_response: Any, capture_completion: dict[str, Any]
+    ) -> None:
+        """No usage on the response at all — e.g. a provider that
+        doesn't report token counts — must surface as None, not 0:
+        callers summing/monitoring usage across calls need to tell
+        "unreported" apart from "genuinely zero"."""
         capture_completion["response"] = make_response(content="ok")
 
         result = simple_completion("test-model", [{"role": "user", "content": "q"}])
 
-        assert result.prompt_tokens == 0
-        assert result.completion_tokens == 0
-        assert result.cached_tokens == 0
+        assert result.prompt_tokens is None
+        assert result.completion_tokens is None
+        assert result.cached_tokens is None
 
     def test_cost_falls_back_to_completion_cost(
         self,
@@ -140,7 +165,13 @@ class TestSimpleCompletion:
         make_response: Any,
         capture_completion: dict[str, Any],
         monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
+        """A price-table failure must still return a usable result
+        (cost=None) — never propagate and take down the completion —
+        but must log, not vanish silently: a caller with no cost data
+        needs to be able to tell "this model is genuinely free" apart
+        from "the cost estimate broke"."""
         capture_completion["response"] = make_response(content="ok")
 
         def raise_unpriced(completion_response: Any) -> float:
@@ -148,7 +179,10 @@ class TestSimpleCompletion:
 
         monkeypatch.setattr(litellm, "completion_cost", raise_unpriced)
 
-        result = simple_completion("test-model", [{"role": "user", "content": "q"}])
+        with caplog.at_level("WARNING", logger="llm_harness.completion"):
+            result = simple_completion("test-model", [{"role": "user", "content": "q"}])
+
+        assert "completion_cost estimate failed" in caplog.text
 
         assert result.cost is None
 

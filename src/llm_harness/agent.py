@@ -86,9 +86,15 @@ def _record_turn(response: Any, elapsed: float, trace: Trace) -> None:
     prompt_tokens, completion_tokens, cached_tokens = extract_usage(response)
     trace.turns.append(
         Turn(
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            cached_tokens=cached_tokens,
+            # Turn's counters get summed across the whole trace
+            # (AgentRun.prompt_tokens etc.), so they stay concrete
+            # ints here — extract_usage's None (provider didn't
+            # report) folds to 0 at this aggregation boundary rather
+            # than earlier, where CompletionResult callers still need
+            # to tell "unreported" apart from "reported as zero".
+            prompt_tokens=prompt_tokens or 0,
+            completion_tokens=completion_tokens or 0,
+            cached_tokens=cached_tokens or 0,
             latency_s=round(elapsed, 2),
             cost=extract_cost(response),
             finish_reason=getattr(response.choices[0], "finish_reason", "") or "",
