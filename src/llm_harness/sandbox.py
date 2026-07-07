@@ -12,7 +12,13 @@ from llm_harness.types import SandboxResult
 IMAGE_NAME = "llm-harness-sandbox"
 TIMEOUT_SECONDS = 30
 CONTAINER_PREFIX = "lh-sandbox-"
-DOCKERFILE_DIR = Path(__file__).resolve().parent.parent.parent / "sandbox"
+# Bundled inside the package (not a sibling of the repo root) so the
+# Docker build context ships with every install — a consumer installing
+# `llm_harness` as a regular dependency (atelier's `path = "../harness"`)
+# only gets what's under src/llm_harness/; a path climbing out to the
+# repo root worked only when running from the harness repo's own
+# checkout and silently broke for every other consumer.
+DOCKERFILE_DIR = Path(__file__).resolve().parent / "docker"
 
 DAEMON_WAIT_SECONDS = 90
 DAEMON_POLL_INTERVAL = 2
