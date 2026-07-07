@@ -17,6 +17,9 @@ def make_response() -> MakeResponse:
     def _factory(
         content: str | None = None,
         tool_calls: list[dict[str, Any]] | None = None,
+        usage: dict[str, Any] | None = None,
+        response_cost: float | None = None,
+        model: str | None = None,
     ) -> SimpleNamespace:
         tc_objects = None
         if tool_calls:
@@ -36,6 +39,13 @@ def make_response() -> MakeResponse:
             content=content,
             tool_calls=tc_objects,
         )
-        return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+        response = SimpleNamespace(choices=[SimpleNamespace(message=message)])
+        if usage is not None:
+            response.usage = SimpleNamespace(**usage)
+        if response_cost is not None:
+            response._hidden_params = {"response_cost": response_cost}
+        if model is not None:
+            response.model = model
+        return response
 
     return _factory

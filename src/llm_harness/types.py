@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, TypedDict
+from typing import Any, Literal, Protocol, TypedDict
 
 
 class ToolCallFunction(TypedDict):
@@ -16,9 +16,28 @@ class ToolCallDict(TypedDict):
     function: ToolCallFunction
 
 
+class TextContentBlock(TypedDict):
+    type: Literal["text"]
+    text: str
+
+
+class ImageURL(TypedDict):
+    url: str
+
+
+class ImageURLContentBlock(TypedDict):
+    type: Literal["image_url"]
+    image_url: ImageURL
+
+
+# OpenAI-style multimodal content: a plain string for text-only
+# messages, or a block list when a message carries images.
+ContentBlock = TextContentBlock | ImageURLContentBlock
+
+
 class _MessageRequired(TypedDict):
     role: str
-    content: str | None
+    content: str | list[ContentBlock] | None
 
 
 class Message(_MessageRequired, total=False):

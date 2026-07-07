@@ -6,6 +6,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
+from llm_harness.completion import extract_cost, extract_usage
 from llm_harness.telemetry import AgentRun, Trace, Turn
 from llm_harness.tools import execute_tool
 from llm_harness.types import (
@@ -39,25 +40,12 @@ def _parse_response_message(response: Any) -> Message:
     return result
 
 
-def _extract_usage(response: Any) -> tuple[int, int, int]:
-    if hasattr(response, "usage") and response.usage:
-        prompt_tokens = getattr(response.usage, "prompt_tokens", None)
-        completion_tokens = getattr(response.usage, "completion_tokens", None)
-        details = getattr(response.usage, "prompt_tokens_details", None)
-        cached_tokens = getattr(details, "cached_tokens", None) or 0
-        return (prompt_tokens or 0, completion_tokens or 0, cached_tokens)
-    return 0, 0, 0
+def _litellm_completion(**kwargs: Any) -> Any:
+    """Default CompletionFunc. Resolved per call so tests that patch
+    ``litellm.completion`` still intercept it."""
+    import litellm
 
-
-def _extract_cost(response: Any) -> float | None:
-    cost = getattr(response, "_hidden_params", {}).get("response_cost")
-    if cost is not None:
-        return float(cost)
-    try:
-        import litellm
-        return litellm.completion_cost(completion_response=response)
-    except Exception:
-        return None
+    return litellm.completion(**kwargs)
 
 
 def _should_nudge(workspace: Path | None, trace: Trace, nudged: bool) -> bool:
@@ -95,14 +83,20 @@ def _snapshot_scratch(scratch_dir: Path) -> dict[str, str]:
 
 
 def _record_turn(response: Any, elapsed: float, trace: Trace) -> None:
-    prompt_tokens, completion_tokens, cached_tokens = _extract_usage(response)
+    prompt_tokens, completion_tokens, cached_tokens = extract_usage(response)
     trace.turns.append(
         Turn(
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            cached_tokens=cached_tokens,
+            # Turn's counters get summed across the whole trace
+            # (AgentRun.prompt_tokens etc.), so they stay concrete
+            # ints here — extract_usage's None (provider didn't
+            # report) folds to 0 at this aggregation boundary rather
+            # than earlier, where CompletionResult callers still need
+            # to tell "unreported" apart from "reported as zero".
+            prompt_tokens=prompt_tokens or 0,
+            completion_tokens=completion_tokens or 0,
+            cached_tokens=cached_tokens or 0,
             latency_s=round(elapsed, 2),
-            cost=_extract_cost(response),
+            cost=extract_cost(response),
             finish_reason=getattr(response.choices[0], "finish_reason", "") or "",
             response_model=getattr(response, "model", "") or "",
         )
@@ -238,7 +232,10 @@ def _run_loop(
                     nudged = True
                     messages.append(_NUDGE_MESSAGE)
                     continue
-                trace.answer = assistant_msg.get("content")
+                answer = assistant_msg.get("content")
+                # Model responses carry plain-string content; block-list
+                # content only appears on outgoing multimodal messages.
+                trace.answer = answer if isinstance(answer, str) else None
                 break
 
             yield from _execute_tool_calls(
@@ -269,7 +266,7 @@ def run_agent_loop(
     model: str,
     messages: list[Message],
     tools: list[ToolDef],
-    completion: CompletionFunc,
+    completion: CompletionFunc | None = None,
     workspace: Path | None = None,
     scratch_dir: Path | None = None,
     sandbox_fn: SandboxFunc | None = None,
@@ -284,7 +281,7 @@ def run_agent_loop(
         model=model,
         messages=messages,
         tools=tools,
-        completion=completion,
+        completion=completion or _litellm_completion,
         workspace=workspace,
         scratch_dir=scratch_dir,
         sandbox_fn=sandbox_fn,
